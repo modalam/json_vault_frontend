@@ -3,10 +3,19 @@ type EditorToolbarProps = {
   onSave: () => void;
   onClear: () => void;
   onFormat: () => void;
+  onCompact: () => void;
+  onSort: () => void;
+  onRepair: () => void;
+  onValidate: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
   onShare: () => void;
   onDelete?: () => void;
   saving: boolean;
   canSave: boolean;
+  canEdit: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
   canShare: boolean;
   canDelete: boolean;
 };
@@ -16,10 +25,19 @@ export function EditorToolbar({
   onSave,
   onClear,
   onFormat,
+  onCompact,
+  onSort,
+  onRepair,
+  onValidate,
+  onUndo,
+  onRedo,
   onShare,
   onDelete,
   saving,
   canSave,
+  canEdit,
+  canUndo,
+  canRedo,
   canShare,
   canDelete,
 }: EditorToolbarProps) {
@@ -42,11 +60,29 @@ export function EditorToolbar({
       >
         {saving ? 'Saving…' : 'Save'}
       </button>
-      <button type="button" className={ghost} onClick={onClear}>
+      <button type="button" className={ghost} onClick={onClear} disabled={!canEdit}>
         Clear
       </button>
-      <button type="button" className={ghost} onClick={onFormat}>
+      <button type="button" className={ghost} onClick={onFormat} disabled={!canEdit}>
         Format
+      </button>
+      <button type="button" className={ghost} onClick={onCompact} disabled={!canEdit}>
+        Compact
+      </button>
+      <button type="button" className={ghost} onClick={onSort} disabled={!canEdit}>
+        Sort keys
+      </button>
+      <button type="button" className={ghost} onClick={onRepair} disabled={!canEdit}>
+        Repair
+      </button>
+      <button type="button" className={ghost} onClick={onValidate}>
+        Validate
+      </button>
+      <button type="button" className={ghost} onClick={onUndo} disabled={!canUndo || !canEdit}>
+        Undo
+      </button>
+      <button type="button" className={ghost} onClick={onRedo} disabled={!canRedo || !canEdit}>
+        Redo
       </button>
 
       <div className="mx-2 hidden items-center gap-3 text-sm text-slate-400 md:flex">

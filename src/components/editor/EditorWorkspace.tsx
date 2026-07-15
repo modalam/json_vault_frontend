@@ -7,7 +7,14 @@ import { StatusBar } from '@/components/editor/StatusBar';
 import { ShareDialog } from '@/components/blob/ShareDialog';
 import { ApiError, createBlob, deleteBlob, getBlob, updateBlob } from '@/lib/api-client';
 import { clearEditToken, getEditToken, setEditToken } from '@/lib/auth';
-import { byteSize, formatJson, isValidJson } from '@/lib/json-utils';
+import {
+  byteSize,
+  compactJson,
+  formatJson,
+  isValidJson,
+  repairJson,
+  sortJson,
+} from '@/lib/json-utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { useEditorStore } from '@/stores/editor-store';
 
@@ -19,6 +26,8 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const [shareOpen, setShareOpen] = useState(false);
+  const [undoStack, setUndoStack] = useState<string[]>([]);
+  const [redoStack, setRedoStack] = useState<string[]>([]);
   const {
     text,
     valid,
@@ -136,11 +145,68 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
 
   function handleFormat() {
     try {
-      setText(formatJson(text));
+      applyTextChange(formatJson(text));
       setStatusMessage('Formatted JSON.');
     } catch {
       setStatusMessage('Cannot format invalid JSON.');
     }
+  }
+
+  function applyTextChange(nextText: string) {
+    if (nextText === text) return;
+    setUndoStack((history) => [...history.slice(-99), text]);
+    setRedoStack([]);
+    setText(nextText);
+  }
+
+  function handleCompact() {
+    try {
+      applyTextChange(compactJson(text));
+      setStatusMessage('Compacted JSON.');
+    } catch {
+      setStatusMessage('Cannot compact invalid JSON.');
+    }
+  }
+
+  function handleSort() {
+    try {
+      applyTextChange(sortJson(text));
+      setStatusMessage('Sorted object keys.');
+    } catch {
+      setStatusMessage('Cannot sort invalid JSON.');
+    }
+  }
+
+  function handleRepair() {
+    try {
+      applyTextChange(repairJson(text));
+      setStatusMessage('Repaired and formatted JSON.');
+    } catch {
+      setStatusMessage('Unable to repair this JSON automatically.');
+    }
+  }
+
+  function handleValidate() {
+    const result = isValidJson(text);
+    setStatusMessage(result.ok ? 'Valid JSON.' : result.error);
+  }
+
+  function handleUndo() {
+    const previous = undoStack.at(-1);
+    if (previous === undefined) return;
+    setUndoStack((history) => history.slice(0, -1));
+    setRedoStack((history) => [...history, text]);
+    setText(previous);
+    setStatusMessage('Undid last change.');
+  }
+
+  function handleRedo() {
+    const next = redoStack.at(-1);
+    if (next === undefined) return;
+    setRedoStack((history) => history.slice(0, -1));
+    setUndoStack((history) => [...history, text]);
+    setText(next);
+    setStatusMessage('Redid last change.');
   }
 
   function handleNew() {
@@ -149,7 +215,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
   }
 
   function handleClear() {
-    setText('{\n\n}\n');
+    applyTextChange('{\n\n}\n');
   }
 
   return (
@@ -159,10 +225,19 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
         onSave={() => void handleSave()}
         onClear={handleClear}
         onFormat={handleFormat}
+        onCompact={handleCompact}
+        onSort={handleSort}
+        onRepair={handleRepair}
+        onValidate={handleValidate}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
         onShare={() => setShareOpen(true)}
         onDelete={() => void handleDelete()}
         saving={saving}
         canSave={Boolean(user) && valid && canEdit && !loading}
+        canEdit={canEdit && !loading}
+        canUndo={undoStack.length > 0}
+        canRedo={redoStack.length > 0}
         canShare={Boolean(activeId)}
         canDelete={Boolean(activeId && editToken)}
       />
@@ -177,7 +252,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
             {loading ? (
               <div className="flex h-full items-center justify-center text-slate-400">Loading…</div>
             ) : (
-              <JsonEditor value={text} onChange={setText} readOnly={!canEdit} />
+              <JsonEditor value={text} onChange={applyTextChange} readOnly={!canEdit} />
             )}
           </div>
         </section>
@@ -209,7 +284,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
             {loading ? (
               <div className="flex h-full items-center justify-center text-slate-400">Loading…</div>
             ) : (
-              <TreeEditor value={text} onChange={canEdit ? setText : () => undefined} />
+              <TreeEditor value={text} onChange={canEdit ? applyTextChange : () => undefined} />
             )}
           </div>
         </section>
