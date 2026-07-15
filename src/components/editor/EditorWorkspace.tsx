@@ -8,6 +8,7 @@ import { ShareDialog } from '@/components/blob/ShareDialog';
 import { ApiError, createBlob, deleteBlob, getBlob, updateBlob } from '@/lib/api-client';
 import { clearEditToken, getEditToken, setEditToken } from '@/lib/auth';
 import { byteSize, formatJson, isValidJson } from '@/lib/json-utils';
+import { useAuthStore } from '@/stores/auth-store';
 import { useEditorStore } from '@/stores/editor-store';
 
 type EditorWorkspaceProps = {
@@ -16,6 +17,7 @@ type EditorWorkspaceProps = {
 
 export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
   const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
   const [shareOpen, setShareOpen] = useState(false);
   const {
     text,
@@ -81,6 +83,11 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
   const lineCount = useMemo(() => text.split('\n').length, [text]);
 
   async function handleSave() {
+    if (!user) {
+      setStatusMessage('Sign in to save your JSON.');
+      return;
+    }
+
     const parsed = isValidJson(text);
     if (!parsed.ok) {
       setStatusMessage(parsed.error);
@@ -155,7 +162,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
         onShare={() => setShareOpen(true)}
         onDelete={() => void handleDelete()}
         saving={saving}
-        canSave={valid && canEdit && !loading}
+        canSave={Boolean(user) && valid && canEdit && !loading}
         canShare={Boolean(activeId)}
         canDelete={Boolean(activeId && editToken)}
       />
