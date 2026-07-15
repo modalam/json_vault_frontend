@@ -1,10 +1,16 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth-store';
 
 export function Header() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/', { replace: true });
+  };
 
   return (
     <header className="flex items-center justify-between border-b border-slate-700 bg-surface px-4 py-3">
@@ -20,7 +26,7 @@ export function Header() {
             <span className="hidden text-slate-500 sm:inline">{user.email}</span>
             <button
               type="button"
-              onClick={() => void logout()}
+              onClick={() => void handleLogout()}
               className="rounded border border-slate-600 px-2 py-1 text-xs hover:border-slate-400 hover:text-white"
             >
               Sign out
