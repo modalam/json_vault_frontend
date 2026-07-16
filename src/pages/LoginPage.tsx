@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
+import { PasswordInput } from '@/components/auth/PasswordInput';
 import { useAuthStore } from '@/stores/auth-store';
 
 export function LoginPage() {
@@ -43,13 +44,11 @@ export function LoginPage() {
 
         <label className="block">
           <span className="mb-1 block text-sm text-slate-300">Password</span>
-          <input
-            type="password"
+          <PasswordInput
             required
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded border border-slate-600 bg-surface px-3 py-2 text-white outline-none focus:border-brand"
           />
         </label>
 
