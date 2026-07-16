@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { JsonEditor } from '@/components/editor/JsonEditor';
 import { TreeEditor } from '@/components/editor/TreeEditor';
 import { EditorToolbar } from '@/components/editor/EditorToolbar';
+import { JsonCompareView } from '@/components/editor/JsonCompareView';
 import { StatusBar } from '@/components/editor/StatusBar';
 import { ShareDialog } from '@/components/blob/ShareDialog';
 import { ApiError, createBlob, deleteBlob, getBlob, updateBlob } from '@/lib/api-client';
@@ -26,6 +27,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const [shareOpen, setShareOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
   const {
@@ -218,6 +220,15 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
     applyTextChange('{\n\n}\n');
   }
 
+  if (compareOpen) {
+    return (
+      <JsonCompareView
+        initialLeft={text.trim() ? text : ''}
+        onBack={() => setCompareOpen(false)}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col">
       <EditorToolbar
@@ -229,6 +240,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
         onSort={handleSort}
         onRepair={handleRepair}
         onValidate={handleValidate}
+        onCompare={() => setCompareOpen(true)}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onShare={() => setShareOpen(true)}
