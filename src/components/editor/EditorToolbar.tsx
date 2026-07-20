@@ -8,6 +8,7 @@ type EditorToolbarProps = {
   onRepair: () => void;
   onValidate: () => void;
   onCompare: () => void;
+  onRequest: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onShare: () => void;
@@ -31,6 +32,7 @@ export function EditorToolbar({
   onRepair,
   onValidate,
   onCompare,
+  onRequest,
   onUndo,
   onRedo,
   onShare,
@@ -82,6 +84,9 @@ export function EditorToolbar({
       </button>
       <button type="button" className={ghost} onClick={onCompare} data-testid="compare-button">
         JSON Compare
+      </button>
+      <button type="button" className={ghost} onClick={onRequest} data-testid="request-button">
+        Request
       </button>
       <button type="button" className={ghost} onClick={onUndo} disabled={!canUndo || !canEdit}>
         Undo
