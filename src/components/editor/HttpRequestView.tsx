@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { JsonViewer } from '@/components/editor/JsonViewer';
 import { WorkspaceSidebar } from '@/components/editor/WorkspaceSidebar';
+import * as api from '@/lib/api-client';
 import { rowsToVariableMap, substituteVariables } from '@/lib/request-variables';
 import { importFiles, mergeImportIntoWorkspace } from '@/lib/request-import';
 import {
@@ -10,6 +11,9 @@ import {
   findRequest,
   getActiveEnvironment,
   getActiveWorkspace,
+  hasUserWorkspaceData,
+  isValidWorkspaceState,
+  createDefaultState,
   loadWorkspaceState,
   saveWorkspaceState,
   type BodyMode,
@@ -20,6 +24,7 @@ import {
   type WorkspaceState,
 } from '@/lib/request-workspace';
 import { formatJson, isValidJson } from '@/lib/json-utils';
+import { useAuthStore } from '@/stores/auth-store';
 
 type ResponseTab = 'body' | 'headers';
 
@@ -40,6 +45,8 @@ type HttpRequestViewProps = {
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 const BODY_METHODS = new Set<HttpMethod>(['POST', 'PUT', 'PATCH', 'DELETE']);
+/** Stable empty UI while auth/account ownership is resolving — avoids flash of wrong collections. */
+const EMPTY_VISIBLE_STATE: WorkspaceState = createDefaultState();
 const CONTENT_TYPE_BY_RAW: Record<RawLanguage, string> = {
   JSON: 'application/json',
   Text: 'text/plain',
@@ -192,9 +199,18 @@ function loadRequestIntoForm(request: SavedRequest) {
 }
 
 export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewProps) {
-  const [workspaceState, setWorkspaceState] = useState<WorkspaceState>(loadWorkspaceState);
+  const user = useAuthStore((state) => state.user);
+  const authInitialized = useAuthStore((state) => state.isInitialized);
+  // Start empty — never flash guest/previous-account data before auth is ready.
+  const [workspaceState, setWorkspaceState] = useState<WorkspaceState>(createDefaultState);
+  /** Whose data `workspaceState` currently represents (`null` = guest). */
+  const [workspaceOwnerId, setWorkspaceOwnerId] = useState<string | null>(null);
   const [sidebarTab, setSidebarTab] = useState<'collections' | 'environments'>('collections');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [syncStatus, setSyncStatus] = useState<'local' | 'loading' | 'synced' | 'saving' | 'error'>(
+    'local',
+  );
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   const [requestName, setRequestName] = useState('New Request');
   const [method, setMethod] = useState<HttpMethod>('GET');
@@ -213,29 +229,157 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [result, setResult] = useState<RequestResult | null>(null);
   const sendGenerationRef = useRef(0);
+  const skipNextRemoteSaveRef = useRef(false);
+  const remoteReadyRef = useRef(false);
+  const remoteHydratedUserRef = useRef<string | null>(null);
 
-  const workspace = getActiveWorkspace(workspaceState);
-  const activeEnvironment = getActiveEnvironment(workspaceState);
+  const expectedOwnerId = user?.id ?? null;
+  const workspaceMatchesUser = authInitialized && workspaceOwnerId === expectedOwnerId;
+  // Hide previous/guest collections for one frame (or until hydrate) after account switch.
+  const visibleWorkspaceState = workspaceMatchesUser ? workspaceState : EMPTY_VISIBLE_STATE;
+
+  const workspace = getActiveWorkspace(visibleWorkspaceState);
+  const activeEnvironment = getActiveEnvironment(visibleWorkspaceState);
   const envVariables = useMemo(
     () => (activeEnvironment ? rowsToVariableMap(activeEnvironment.variables) : {}),
     [activeEnvironment],
   );
 
   useEffect(() => {
-    saveWorkspaceState(workspaceState);
-  }, [workspaceState]);
+    // Never persist another account's (or pre-auth) state into the wrong localStorage key.
+    if (!authInitialized || !workspaceMatchesUser) return;
+    saveWorkspaceState(workspaceState, expectedOwnerId);
+  }, [workspaceState, expectedOwnerId, authInitialized, workspaceMatchesUser]);
+
+  useEffect(() => {
+    if (!authInitialized) return;
+
+    if (!user) {
+      remoteReadyRef.current = false;
+      remoteHydratedUserRef.current = null;
+      skipNextRemoteSaveRef.current = true;
+      setWorkspaceOwnerId(null);
+      setWorkspaceState(loadWorkspaceState(null));
+      setSyncStatus('local');
+      setSyncMessage(null);
+      return;
+    }
+
+    if (remoteHydratedUserRef.current === user.id) return;
+
+    let cancelled = false;
+    remoteReadyRef.current = false;
+    // Switch UI to this user's scoped cache immediately (empty for a new account).
+    // Avoids flashing guest / previous-account collections while the API loads.
+    skipNextRemoteSaveRef.current = true;
+    setWorkspaceOwnerId(user.id);
+    setWorkspaceState(loadWorkspaceState(user.id));
+    setSyncStatus('loading');
+    setSyncMessage('Loading workspaces from your account…');
+
+    void (async () => {
+      try {
+        const remote = await api.getRequestWorkspaceState();
+        if (cancelled) return;
+
+        // Only use this user's own cloud data or this user's scoped browser cache.
+        // Never upload another account's (or shared legacy) localStorage into a new account.
+        const userLocal = loadWorkspaceState(user.id);
+
+        if (remote && isValidWorkspaceState(remote)) {
+          skipNextRemoteSaveRef.current = true;
+          setWorkspaceOwnerId(user.id);
+          setWorkspaceState(remote);
+          saveWorkspaceState(remote, user.id);
+          setSyncStatus('synced');
+          setSyncMessage('Synced with your account.');
+        } else if (hasUserWorkspaceData(userLocal)) {
+          await api.saveRequestWorkspaceState(userLocal);
+          if (cancelled) return;
+          skipNextRemoteSaveRef.current = true;
+          setWorkspaceOwnerId(user.id);
+          setWorkspaceState(userLocal);
+          setSyncStatus('synced');
+          setSyncMessage('Synced with your account.');
+        } else {
+          const empty = createEmptyWorkspace('My Workspace');
+          const initial = {
+            workspaces: [empty],
+            activeWorkspaceId: empty.id,
+            activeEnvironmentId: null,
+            activeRequestId: null,
+          };
+          await api.saveRequestWorkspaceState(initial);
+          if (cancelled) return;
+          skipNextRemoteSaveRef.current = true;
+          setWorkspaceOwnerId(user.id);
+          setWorkspaceState(initial);
+          saveWorkspaceState(initial, user.id);
+          setSyncStatus('synced');
+          setSyncMessage('Synced with your account.');
+        }
+        remoteHydratedUserRef.current = user.id;
+        remoteReadyRef.current = true;
+      } catch {
+        if (cancelled) return;
+        remoteReadyRef.current = false;
+        skipNextRemoteSaveRef.current = true;
+        setWorkspaceOwnerId(user.id);
+        setWorkspaceState(loadWorkspaceState(user.id));
+        setSyncStatus('error');
+        setSyncMessage('Could not sync with account — using this browser only.');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authInitialized, user]);
+
+  useEffect(() => {
+    if (!user || !remoteReadyRef.current || !workspaceMatchesUser) return;
+    if (skipNextRemoteSaveRef.current) {
+      skipNextRemoteSaveRef.current = false;
+      return;
+    }
+
+    setSyncStatus('saving');
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          await api.saveRequestWorkspaceState(workspaceState);
+          setSyncStatus('synced');
+          setSyncMessage('Synced with your account.');
+        } catch {
+          setSyncStatus('error');
+          setSyncMessage('Could not save to account — changes kept in this browser.');
+        }
+      })();
+    }, 800);
+
+    return () => window.clearTimeout(timer);
+  }, [workspaceState, user, workspaceMatchesUser]);
 
   useEffect(() => {
     sendGenerationRef.current += 1;
-    if (!workspaceState.activeRequestId) {
+    if (!visibleWorkspaceState.activeRequestId) {
+      setRequestName('New Request');
+      setMethod('GET');
+      setUrl('');
+      setHeaders([createRow('Accept', 'application/json')]);
+      setQueryParams([createRow()]);
+      setBody(initialBody.trim() ? initialBody : '{\n  \n}\n');
+      setBodyMode('none');
+      setRawLanguage('JSON');
       setResult(null);
       setError(null);
       setSaveMessage(null);
       setBodyMessage(null);
+      setSending(false);
       return;
     }
-    const ws = getActiveWorkspace(workspaceState);
-    const found = findRequest(ws, workspaceState.activeRequestId);
+    const ws = getActiveWorkspace(visibleWorkspaceState);
+    const found = findRequest(ws, visibleWorkspaceState.activeRequestId);
     if (!found) return;
     const form = loadRequestIntoForm(found.request);
     setRequestName(form.requestName);
@@ -252,7 +396,11 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
     setBodyMessage(null);
     setSending(false);
     setResponseTab('body');
-  }, [workspaceState.activeRequestId, workspaceState.activeWorkspaceId]);
+  }, [
+    visibleWorkspaceState.activeRequestId,
+    visibleWorkspaceState.activeWorkspaceId,
+    initialBody,
+  ]);
 
   const supportsBody = BODY_METHODS.has(method);
   const activeRequestTab = !supportsBody && requestTab === 'body' ? 'headers' : requestTab;
@@ -573,14 +721,27 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
             {activeEnvironment.name}
           </span>
         )}
+        {user && syncMessage && (
+          <span
+            className={`text-xs ${
+              syncStatus === 'error'
+                ? 'text-amber-300'
+                : syncStatus === 'saving' || syncStatus === 'loading'
+                  ? 'text-slate-400'
+                  : 'text-emerald-400/90'
+            }`}
+          >
+            {syncMessage}
+          </span>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         {sidebarOpen && (
           <WorkspaceSidebar
-            state={workspaceState}
+            state={visibleWorkspaceState}
             workspace={workspace}
-            activeRequestId={workspaceState.activeRequestId}
+            activeRequestId={visibleWorkspaceState.activeRequestId}
             importMessage={importMessage}
             activeTab={sidebarTab}
             onSwitchTab={setSidebarTab}
@@ -606,6 +767,24 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
                 activeEnvironmentId: newWorkspace.environments[0]?.id ?? null,
                 activeRequestId: newWorkspace.collections[0]?.requests[0]?.id ?? null,
               }));
+            }}
+            onDeleteWorkspace={(workspaceId) => {
+              updateWorkspace((state) => {
+                if (state.workspaces.length <= 1) return state;
+                const nextWorkspaces = state.workspaces.filter((item) => item.id !== workspaceId);
+                const nextActive =
+                  state.activeWorkspaceId === workspaceId
+                    ? nextWorkspaces[0]!
+                    : (nextWorkspaces.find((item) => item.id === state.activeWorkspaceId) ??
+                      nextWorkspaces[0]!);
+                return {
+                  ...state,
+                  workspaces: nextWorkspaces,
+                  activeWorkspaceId: nextActive.id,
+                  activeEnvironmentId: nextActive.environments[0]?.id ?? null,
+                  activeRequestId: nextActive.collections[0]?.requests[0]?.id ?? null,
+                };
+              });
             }}
             onSelectRequest={(requestId) => {
               updateWorkspace((state) => ({ ...state, activeRequestId: requestId }));
@@ -1032,8 +1211,10 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
             )}
 
             <p className="text-xs text-slate-500">
-              Workspaces, collections, and environments are saved in this browser. Use {'{{variable}}'}{' '}
-              in URLs, headers, and body with the active environment.
+              {user
+                ? 'Workspaces, collections, and environments sync to your account when signed in (also kept in this browser).'
+                : 'Workspaces, collections, and environments are saved in this browser. Sign in to sync them across devices.'}{' '}
+              Use {'{{variable}}'} in URLs, headers, and body with the active environment.
             </p>
           </div>
         </div>

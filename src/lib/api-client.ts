@@ -180,6 +180,38 @@ export async function listBlobs(limit = 20): Promise<BlobSummary[]> {
   return body.data;
 }
 
+export type RequestWorkspaceStatePayload = {
+  workspaces: Array<{
+    id: string;
+    name: string;
+    collections: unknown[];
+    environments: unknown[];
+  }>;
+  activeWorkspaceId: string;
+  activeEnvironmentId: string | null;
+  activeRequestId: string | null;
+};
+
+export async function getRequestWorkspaceState(): Promise<RequestWorkspaceStatePayload | null> {
+  const res = await fetchWithAuth(`${API_URL}/api/v1/request-workspaces`, { method: 'GET' });
+  if (!res.ok) throw await parseError(res);
+  const body = (await res.json()) as { data: RequestWorkspaceStatePayload | null };
+  return body.data;
+}
+
+export async function saveRequestWorkspaceState(
+  state: RequestWorkspaceStatePayload,
+): Promise<{ updatedAt: string }> {
+  const res = await fetchWithAuth(`${API_URL}/api/v1/request-workspaces`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state }),
+  });
+  if (!res.ok) throw await parseError(res);
+  const body = (await res.json()) as { data: { updatedAt: string } };
+  return body.data;
+}
+
 export async function createBlob(content: unknown, name?: string): Promise<{ id: string; editToken: string }> {
   const res = await fetchWithAuth(`${API_URL}/api/v1/createblobs`, {
     method: 'POST',

@@ -14,6 +14,13 @@ type NameDialogState =
   | { kind: 'environment-rename'; environmentId: string; name: string };
 
 type ConfirmDialogState =
+  | {
+      kind: 'workspace-delete';
+      workspaceId: string;
+      name: string;
+      collectionCount: number;
+      environmentCount: number;
+    }
   | { kind: 'collection-delete'; collectionId: string; name: string; requestCount: number }
   | { kind: 'request-delete'; collectionId: string; requestId: string; name: string }
   | { kind: 'environment-delete'; environmentId: string; name: string };
@@ -25,6 +32,7 @@ type WorkspaceSidebarProps = {
   importMessage: string | null;
   onSwitchWorkspace: (workspaceId: string) => void;
   onCreateWorkspace: (name: string) => void;
+  onDeleteWorkspace: (workspaceId: string) => void;
   onSwitchTab: (tab: SidebarTab) => void;
   activeTab: SidebarTab;
   onSelectRequest: (requestId: string) => void;
@@ -66,6 +74,7 @@ export function WorkspaceSidebar({
   importMessage,
   onSwitchWorkspace,
   onCreateWorkspace,
+  onDeleteWorkspace,
   onSwitchTab,
   activeTab,
   onSelectRequest,
@@ -158,6 +167,9 @@ export function WorkspaceSidebar({
   function handleConfirmDelete() {
     if (!confirmDialog) return;
     switch (confirmDialog.kind) {
+      case 'workspace-delete':
+        onDeleteWorkspace(confirmDialog.workspaceId);
+        break;
       case 'collection-delete':
         onDeleteCollection(confirmDialog.collectionId);
         break;
@@ -170,6 +182,8 @@ export function WorkspaceSidebar({
     }
     setConfirmDialog(null);
   }
+
+  const canDeleteWorkspace = state.workspaces.length > 1;
 
   const nameDialogProps = (() => {
     if (!nameDialog) return null;
@@ -222,6 +236,11 @@ export function WorkspaceSidebar({
   const confirmDialogProps = (() => {
     if (!confirmDialog) return null;
     switch (confirmDialog.kind) {
+      case 'workspace-delete':
+        return {
+          title: `Delete "${confirmDialog.name}"?`,
+          description: `This will permanently delete the workspace, its ${confirmDialog.collectionCount} collection${confirmDialog.collectionCount === 1 ? '' : 's'}, and ${confirmDialog.environmentCount} environment${confirmDialog.environmentCount === 1 ? '' : 's'}. This action cannot be undone.`,
+        };
       case 'collection-delete':
         return {
           title: `Delete "${confirmDialog.name}"?`,
@@ -267,6 +286,27 @@ export function WorkspaceSidebar({
               title="New workspace"
             >
               +
+            </button>
+            <button
+              type="button"
+              disabled={!canDeleteWorkspace}
+              onClick={() =>
+                setConfirmDialog({
+                  kind: 'workspace-delete',
+                  workspaceId: workspace.id,
+                  name: workspace.name,
+                  collectionCount: workspace.collections.length,
+                  environmentCount: workspace.environments.length,
+                })
+              }
+              className="rounded-md border border-slate-600 bg-slate-800 px-2.5 text-sm text-red-300 hover:bg-slate-700 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-slate-800 disabled:hover:text-red-300"
+              title={
+                canDeleteWorkspace
+                  ? `Delete workspace "${workspace.name}"`
+                  : 'Keep at least one workspace'
+              }
+            >
+              ×
             </button>
           </div>
         </div>
