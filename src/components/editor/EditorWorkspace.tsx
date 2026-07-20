@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { JsonEditor } from '@/components/editor/JsonEditor';
 import { TreeEditor } from '@/components/editor/TreeEditor';
 import { EditorToolbar } from '@/components/editor/EditorToolbar';
 import { JsonCompareView } from '@/components/editor/JsonCompareView';
-import { HttpRequestView } from '@/components/editor/HttpRequestView';
 import { StatusBar } from '@/components/editor/StatusBar';
 import { ShareDialog } from '@/components/blob/ShareDialog';
 import { ApiError, createBlob, deleteBlob, getBlob, updateBlob } from '@/lib/api-client';
@@ -17,6 +16,7 @@ import {
   repairJson,
   sortJson,
 } from '@/lib/json-utils';
+import { setRequestReturnPath } from '@/lib/request-navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { useEditorStore } from '@/stores/editor-store';
 
@@ -26,10 +26,10 @@ type EditorWorkspaceProps = {
 
 export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuthStore((state) => state.user);
   const [shareOpen, setShareOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
-  const [requestOpen, setRequestOpen] = useState(false);
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
   const {
@@ -231,15 +231,6 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
     );
   }
 
-  if (requestOpen) {
-    return (
-      <HttpRequestView
-        initialBody={text.trim() ? text : ''}
-        onBack={() => setRequestOpen(false)}
-      />
-    );
-  }
-
   return (
     <div className="flex flex-1 flex-col">
       <EditorToolbar
@@ -252,7 +243,10 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
         onRepair={handleRepair}
         onValidate={handleValidate}
         onCompare={() => setCompareOpen(true)}
-        onRequest={() => setRequestOpen(true)}
+        onRequest={() => {
+          setRequestReturnPath(location.pathname + location.search);
+          navigate('/request');
+        }}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onShare={() => setShareOpen(true)}

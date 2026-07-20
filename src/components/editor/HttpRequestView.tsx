@@ -1,19 +1,27 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { JsonViewer } from '@/components/editor/JsonViewer';
+import { WorkspaceSidebar } from '@/components/editor/WorkspaceSidebar';
+import { rowsToVariableMap, substituteVariables } from '@/lib/request-variables';
+import { importFiles, mergeImportIntoWorkspace } from '@/lib/request-import';
+import {
+  createEmptyWorkspace,
+  createId,
+  createRow,
+  findRequest,
+  getActiveEnvironment,
+  getActiveWorkspace,
+  loadWorkspaceState,
+  saveWorkspaceState,
+  type BodyMode,
+  type HttpMethod,
+  type KeyValueRow,
+  type RawLanguage,
+  type SavedRequest,
+  type WorkspaceState,
+} from '@/lib/request-workspace';
 import { formatJson, isValidJson } from '@/lib/json-utils';
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
-
-type KeyValueRow = {
-  id: string;
-  enabled: boolean;
-  key: string;
-  value: string;
-};
-
 type ResponseTab = 'body' | 'headers';
-type BodyMode = 'none' | 'raw';
-type RawLanguage = 'JSON' | 'Text';
 
 type RequestResult = {
   status: number;
@@ -36,15 +44,6 @@ const CONTENT_TYPE_BY_RAW: Record<RawLanguage, string> = {
   JSON: 'application/json',
   Text: 'text/plain',
 };
-
-function createRow(key = '', value = ''): KeyValueRow {
-  return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    enabled: true,
-    key,
-    value,
-  };
-}
 
 function rowsToRecord(rows: KeyValueRow[]): Record<string, string> {
   const out: Record<string, string> = {};
@@ -152,7 +151,6 @@ function KeyValueEditor({
               checked={row.enabled}
               onChange={(e) => updateRow(row.id, { enabled: e.target.checked })}
               className="h-4 w-4 accent-brand"
-              aria-label={`Enable ${title.slice(0, -1).toLowerCase()}`}
             />
             <input
               value={row.key}
@@ -170,7 +168,6 @@ function KeyValueEditor({
               type="button"
               onClick={() => removeRow(row.id)}
               className="rounded px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-              aria-label="Remove row"
             >
               ×
             </button>
@@ -181,27 +178,76 @@ function KeyValueEditor({
   );
 }
 
+function loadRequestIntoForm(request: SavedRequest) {
+  return {
+    requestName: request.name,
+    method: request.method,
+    url: request.url,
+    headers: request.headers.map((row) => ({ ...row })),
+    queryParams: request.queryParams.map((row) => ({ ...row })),
+    body: request.body,
+    bodyMode: request.bodyMode,
+    rawLanguage: request.rawLanguage,
+  };
+}
+
 export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewProps) {
-  const [method, setMethod] = useState<HttpMethod>('POST');
-  const [url, setUrl] = useState('https://httpbin.org/post');
-  const [headers, setHeaders] = useState<KeyValueRow[]>([
-    createRow('Content-Type', 'application/json'),
-    createRow('Accept', 'application/json'),
-  ]);
+  const [workspaceState, setWorkspaceState] = useState<WorkspaceState>(loadWorkspaceState);
+  const [sidebarTab, setSidebarTab] = useState<'collections' | 'environments'>('collections');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const [requestName, setRequestName] = useState('New Request');
+  const [method, setMethod] = useState<HttpMethod>('GET');
+  const [url, setUrl] = useState('');
+  const [headers, setHeaders] = useState<KeyValueRow[]>([createRow('Accept', 'application/json')]);
   const [queryParams, setQueryParams] = useState<KeyValueRow[]>([createRow()]);
   const [body, setBody] = useState(initialBody.trim() ? initialBody : '{\n  \n}\n');
-  const [bodyMode, setBodyMode] = useState<BodyMode>('raw');
+  const [bodyMode, setBodyMode] = useState<BodyMode>('none');
   const [rawLanguage, setRawLanguage] = useState<RawLanguage>('JSON');
   const [bodyMessage, setBodyMessage] = useState<string | null>(null);
-  const [requestTab, setRequestTab] = useState<'params' | 'headers' | 'body'>('body');
+  const [requestTab, setRequestTab] = useState<'params' | 'headers' | 'body'>('params');
   const [responseTab, setResponseTab] = useState<ResponseTab>('body');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
   const [result, setResult] = useState<RequestResult | null>(null);
 
-  const supportsBody = BODY_METHODS.has(method);
+  const workspace = getActiveWorkspace(workspaceState);
+  const activeEnvironment = getActiveEnvironment(workspaceState);
+  const envVariables = useMemo(
+    () => (activeEnvironment ? rowsToVariableMap(activeEnvironment.variables) : {}),
+    [activeEnvironment],
+  );
 
+  useEffect(() => {
+    saveWorkspaceState(workspaceState);
+  }, [workspaceState]);
+
+  useEffect(() => {
+    if (!workspaceState.activeRequestId) return;
+    const ws = getActiveWorkspace(workspaceState);
+    const found = findRequest(ws, workspaceState.activeRequestId);
+    if (!found) return;
+    const form = loadRequestIntoForm(found.request);
+    setRequestName(form.requestName);
+    setMethod(form.method);
+    setUrl(form.url);
+    setHeaders(form.headers);
+    setQueryParams(form.queryParams);
+    setBody(form.body);
+    setBodyMode(form.bodyMode);
+    setRawLanguage(form.rawLanguage);
+    setError(null);
+    setSaveMessage(null);
+  }, [workspaceState.activeRequestId, workspaceState.activeWorkspaceId]);
+
+  const supportsBody = BODY_METHODS.has(method);
   const activeRequestTab = !supportsBody && requestTab === 'body' ? 'headers' : requestTab;
+
+  function updateWorkspace(updater: (state: WorkspaceState) => WorkspaceState) {
+    setWorkspaceState((prev) => updater(prev));
+  }
 
   function applyBodyMode(mode: BodyMode) {
     setBodyMode(mode);
@@ -233,21 +279,169 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
     }
   }
 
+  function currentSavedRequest(): SavedRequest {
+    return {
+      id: workspaceState.activeRequestId ?? createId(),
+      name: requestName.trim() || 'Untitled Request',
+      method,
+      url,
+      headers: headers.map((row) => ({ ...row })),
+      queryParams: queryParams.map((row) => ({ ...row })),
+      body,
+      bodyMode,
+      rawLanguage,
+    };
+  }
+
+  function handleSaveRequest() {
+    const saved = currentSavedRequest();
+    const requestId = workspaceState.activeRequestId;
+
+    updateWorkspace((state) => {
+      const ws = getActiveWorkspace(state);
+      let targetCollectionId = ws.collections[0]?.id;
+
+      if (requestId) {
+        for (const collection of ws.collections) {
+          if (collection.requests.some((item) => item.id === requestId)) {
+            targetCollectionId = collection.id;
+            break;
+          }
+        }
+      }
+
+      if (!targetCollectionId) {
+        const collectionId = createId();
+        return {
+          ...state,
+          workspaces: state.workspaces.map((item) =>
+            item.id === ws.id
+              ? {
+                  ...item,
+                  collections: [
+                    {
+                      id: collectionId,
+                      name: 'My Collection',
+                      requests: [{ ...saved, id: createId() }],
+                    },
+                  ],
+                }
+              : item,
+          ),
+          activeRequestId: saved.id,
+        };
+      }
+
+      const nextRequestId = requestId ?? createId();
+      const nextSaved = { ...saved, id: nextRequestId };
+
+      return {
+        ...state,
+        workspaces: state.workspaces.map((item) =>
+          item.id === ws.id
+            ? {
+                ...item,
+                collections: item.collections.map((collection) => {
+                  if (collection.id !== targetCollectionId) return collection;
+                  const exists = collection.requests.some((r) => r.id === nextRequestId);
+                  return {
+                    ...collection,
+                    requests: exists
+                      ? collection.requests.map((r) => (r.id === nextRequestId ? nextSaved : r))
+                      : [...collection.requests, nextSaved],
+                  };
+                }),
+              }
+            : item,
+        ),
+        activeRequestId: nextRequestId,
+      };
+    });
+
+    setSaveMessage('Request saved.');
+  }
+
+  async function handleImportFiles(files: File[]) {
+    setImportMessage(null);
+    const imported = await importFiles(files);
+    const hasItems = imported.collections.length > 0 || imported.environments.length > 0;
+
+    if (!hasItems) {
+      setImportMessage(imported.errors[0] ?? 'Nothing was imported.');
+      return;
+    }
+
+    let firstRequestId: string | null = null;
+    let firstEnvironmentId: string | null = workspaceState.activeEnvironmentId;
+
+    updateWorkspace((state) => {
+      const ws = getActiveWorkspace(state);
+      const merged = mergeImportIntoWorkspace(ws, imported);
+      firstRequestId = merged.firstRequestId;
+      if (imported.environments.length > 0 && !firstEnvironmentId) {
+        firstEnvironmentId = imported.environments[0]?.id ?? null;
+      }
+      return {
+        ...state,
+        workspaces: state.workspaces.map((item) =>
+          item.id === ws.id
+            ? {
+                ...item,
+                collections: merged.collections,
+                environments: merged.environments,
+              }
+            : item,
+        ),
+        activeRequestId: firstRequestId,
+        activeEnvironmentId:
+          imported.environments.length > 0
+            ? (imported.environments[0]?.id ?? state.activeEnvironmentId)
+            : state.activeEnvironmentId,
+      };
+    });
+
+    if (imported.environments.length > 0) {
+      setSidebarTab('environments');
+    } else {
+      setSidebarTab('collections');
+    }
+
+    const parts: string[] = [];
+    if (imported.collections.length > 0) {
+      parts.push(
+        `${imported.collections.length} collection${imported.collections.length === 1 ? '' : 's'}`,
+      );
+    }
+    if (imported.environments.length > 0) {
+      parts.push(
+        `${imported.environments.length} environment${imported.environments.length === 1 ? '' : 's'}`,
+      );
+    }
+    const summary = `Imported ${parts.join(' and ')}.`;
+    setImportMessage(
+      imported.errors.length > 0 ? `${summary} ${imported.errors.length} file(s) skipped.` : summary,
+    );
+  }
+
   const previewUrl = useMemo(() => {
     try {
-      return buildUrl(url, queryParams);
+      const resolved = substituteVariables(url, envVariables);
+      return buildUrl(resolved, queryParams.map((row) => ({
+        ...row,
+        value: substituteVariables(row.value, envVariables),
+      })));
     } catch {
-      return url;
+      return substituteVariables(url, envVariables);
     }
-  }, [url, queryParams]);
+  }, [url, queryParams, envVariables]);
 
   async function handleSend() {
     setSending(true);
     setError(null);
     setResult(null);
 
-    const trimmedUrl = url.trim();
-    if (!trimmedUrl) {
+    const resolvedUrl = substituteVariables(url.trim(), envVariables);
+    if (!resolvedUrl) {
       setError('Enter a request URL.');
       setSending(false);
       return;
@@ -255,21 +449,30 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
 
     let finalUrl: string;
     try {
-      finalUrl = buildUrl(trimmedUrl, queryParams);
+      finalUrl = buildUrl(
+        resolvedUrl,
+        queryParams.map((row) => ({
+          ...row,
+          value: substituteVariables(row.value, envVariables),
+        })),
+      );
     } catch {
       setError('Enter a valid URL (including https://).');
       setSending(false);
       return;
     }
 
-    const headerMap = rowsToRecord(headers);
-    const init: RequestInit = {
-      method,
-      headers: headerMap,
-    };
+    const headerMap = Object.fromEntries(
+      Object.entries(rowsToRecord(headers)).map(([key, value]) => [
+        key,
+        substituteVariables(value, envVariables),
+      ]),
+    );
+
+    const init: RequestInit = { method, headers: headerMap };
 
     if (supportsBody && bodyMode === 'raw' && body.trim()) {
-      init.body = body;
+      init.body = substituteVariables(body, envVariables);
     }
 
     const started = performance.now();
@@ -333,244 +536,488 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
         >
           ← Back to editor
         </button>
+        <button
+          type="button"
+          onClick={() => setSidebarOpen((open) => !open)}
+          className="rounded-md bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 md:hidden"
+        >
+          {sidebarOpen ? 'Hide panel' : 'Workspaces'}
+        </button>
         <h2 className="text-sm font-semibold text-white">HTTP Request</h2>
-        <p className="hidden text-xs text-slate-400 sm:block">
-          Send the current JSON as an API request (Postman-style)
-        </p>
+        {activeEnvironment && (
+          <span className="rounded-full border border-emerald-800/60 bg-emerald-950/40 px-2 py-0.5 text-xs text-emerald-300">
+            {activeEnvironment.name}
+          </span>
+        )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-4">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <select
-              value={method}
-              onChange={(e) => setMethod(e.target.value as HttpMethod)}
-              className="rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-100 outline-none focus:border-brand"
-              aria-label="HTTP method"
-            >
-              {METHODS.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://api.example.com/endpoint"
-              className="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100 outline-none focus:border-brand"
-            />
-            <button
-              type="button"
-              onClick={() => void handleSend()}
-              disabled={sending}
-              className="rounded-md bg-brand px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-60"
-            >
-              {sending ? 'Sending…' : 'Send'}
-            </button>
-          </div>
-
-          <p className="truncate font-mono text-xs text-slate-500" title={previewUrl}>
-            {previewUrl || 'Enter a URL to preview the final request'}
-          </p>
-
-          <div className="rounded-lg border border-slate-700 bg-slate-900/40">
-            <div className="flex flex-wrap items-center gap-1 border-b border-slate-700 px-2 py-2">
-              <button
-                type="button"
-                className={tabBtn(activeRequestTab === 'params')}
-                onClick={() => setRequestTab('params')}
-              >
-                Params
-              </button>
-              <button
-                type="button"
-                className={tabBtn(activeRequestTab === 'headers')}
-                onClick={() => setRequestTab('headers')}
-              >
-                Headers
-              </button>
-              <button
-                type="button"
-                className={tabBtn(activeRequestTab === 'body')}
-                onClick={() => setRequestTab('body')}
-                disabled={!supportsBody}
-              >
-                Body
-              </button>
-              {supportsBody && (
-                <button
-                  type="button"
-                  onClick={loadFromEditor}
-                  className="ml-auto rounded-md px-3 py-1.5 text-xs text-brand hover:underline"
-                >
-                  Use editor JSON
-                </button>
-              )}
-            </div>
-
-            <div className="p-3">
-              {activeRequestTab === 'params' && (
-                <KeyValueEditor
-                  title="Query params"
-                  rows={queryParams}
-                  onChange={setQueryParams}
-                  keyPlaceholder="Key"
-                  valuePlaceholder="Value"
-                />
-              )}
-              {activeRequestTab === 'headers' && (
-                <KeyValueEditor
-                  title="Headers"
-                  rows={headers}
-                  onChange={setHeaders}
-                  keyPlaceholder="Header"
-                  valuePlaceholder="Value"
-                />
-              )}
-              {activeRequestTab === 'body' && (
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <label className="flex items-center gap-2 text-sm text-slate-300">
-                      <input
-                        type="radio"
-                        name="body-mode"
-                        checked={bodyMode === 'none'}
-                        onChange={() => applyBodyMode('none')}
-                        className="accent-brand"
-                      />
-                      none
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-slate-300">
-                      <input
-                        type="radio"
-                        name="body-mode"
-                        checked={bodyMode === 'raw'}
-                        onChange={() => applyBodyMode('raw')}
-                        className="accent-brand"
-                      />
-                      raw
-                    </label>
-                    {bodyMode === 'raw' && (
-                      <select
-                        value={rawLanguage}
-                        onChange={(e) => applyRawLanguage(e.target.value as RawLanguage)}
-                        className="rounded border border-slate-600 bg-slate-950 px-2 py-1 text-sm text-brand outline-none focus:border-brand"
-                        aria-label="Raw body language"
-                      >
-                        <option value="JSON">JSON</option>
-                        <option value="Text">Text</option>
-                      </select>
-                    )}
-                    {bodyMode === 'raw' && (
-                      <button
-                        type="button"
-                        onClick={handleBeautify}
-                        className="ml-auto text-sm text-brand hover:underline"
-                      >
-                        Beautify
-                      </button>
-                    )}
-                  </div>
-
-                  {bodyMode === 'none' ? (
-                    <p className="rounded-md border border-slate-700 bg-slate-950/60 px-3 py-8 text-center text-sm text-slate-400">
-                      This request does not have a body
-                    </p>
-                  ) : (
-                    <textarea
-                      value={body}
-                      onChange={(e) => {
-                        setBody(e.target.value);
-                        setBodyMessage(null);
-                      }}
-                      spellCheck={false}
-                      className="min-h-[220px] w-full resize-y rounded-md border border-slate-600 bg-slate-950 p-3 font-mono text-[13px] text-slate-100 outline-none focus:border-brand"
-                      placeholder={
-                        rawLanguage === 'JSON' ? '{\n  "key": "value"\n}' : 'Enter raw request body'
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        {sidebarOpen && (
+          <WorkspaceSidebar
+            state={workspaceState}
+            workspace={workspace}
+            activeRequestId={workspaceState.activeRequestId}
+            importMessage={importMessage}
+            activeTab={sidebarTab}
+            onSwitchTab={setSidebarTab}
+            onImportFiles={handleImportFiles}
+            onSwitchWorkspace={(workspaceId) => {
+              updateWorkspace((state) => {
+                const nextWorkspace = state.workspaces.find((w) => w.id === workspaceId);
+                const firstRequest = nextWorkspace?.collections[0]?.requests[0];
+                return {
+                  ...state,
+                  activeWorkspaceId: workspaceId,
+                  activeEnvironmentId: nextWorkspace?.environments[0]?.id ?? null,
+                  activeRequestId: firstRequest?.id ?? null,
+                };
+              });
+            }}
+            onCreateWorkspace={() => {
+              const name = window.prompt('Workspace name', 'New Workspace');
+              if (!name?.trim()) return;
+              const newWorkspace = createEmptyWorkspace(name.trim());
+              updateWorkspace((state) => ({
+                ...state,
+                workspaces: [...state.workspaces, newWorkspace],
+                activeWorkspaceId: newWorkspace.id,
+                activeEnvironmentId: newWorkspace.environments[0]?.id ?? null,
+                activeRequestId: newWorkspace.collections[0]?.requests[0]?.id ?? null,
+              }));
+            }}
+            onSelectRequest={(requestId) => {
+              updateWorkspace((state) => ({ ...state, activeRequestId: requestId }));
+            }}
+            onCreateCollection={() => {
+              const name = window.prompt('Collection name', 'New Collection');
+              if (!name?.trim()) return;
+              const collectionId = createId();
+              const request = {
+                id: createId(),
+                name: 'New Request',
+                method: 'GET' as HttpMethod,
+                url: '',
+                headers: [createRow('Accept', 'application/json')],
+                queryParams: [createRow()],
+                body: '{\n  \n}\n',
+                bodyMode: 'none' as BodyMode,
+                rawLanguage: 'JSON' as RawLanguage,
+              };
+              updateWorkspace((state) => ({
+                ...state,
+                workspaces: state.workspaces.map((item) =>
+                  item.id === workspace.id
+                    ? {
+                        ...item,
+                        collections: [
+                          ...item.collections,
+                          { id: collectionId, name: name.trim(), requests: [request] },
+                        ],
                       }
-                    />
-                  )}
+                    : item,
+                ),
+                activeRequestId: request.id,
+              }));
+            }}
+            onRenameCollection={(collectionId, name) => {
+              updateWorkspace((state) => ({
+                ...state,
+                workspaces: state.workspaces.map((item) =>
+                  item.id === workspace.id
+                    ? {
+                        ...item,
+                        collections: item.collections.map((collection) =>
+                          collection.id === collectionId ? { ...collection, name } : collection,
+                        ),
+                      }
+                    : item,
+                ),
+              }));
+            }}
+            onDeleteCollection={(collectionId) => {
+              updateWorkspace((state) => {
+                const ws = getActiveWorkspace(state);
+                const nextCollections = ws.collections.filter((c) => c.id !== collectionId);
+                const nextRequestId = nextCollections[0]?.requests[0]?.id ?? null;
+                return {
+                  ...state,
+                  workspaces: state.workspaces.map((item) =>
+                    item.id === ws.id ? { ...item, collections: nextCollections } : item,
+                  ),
+                  activeRequestId: nextRequestId,
+                };
+              });
+            }}
+            onCreateRequest={(collectionId) => {
+              const request = {
+                id: createId(),
+                name: 'New Request',
+                method: 'GET' as HttpMethod,
+                url: '',
+                headers: [createRow('Accept', 'application/json')],
+                queryParams: [createRow()],
+                body: '{\n  \n}\n',
+                bodyMode: 'none' as BodyMode,
+                rawLanguage: 'JSON' as RawLanguage,
+              };
+              updateWorkspace((state) => ({
+                ...state,
+                workspaces: state.workspaces.map((item) =>
+                  item.id === workspace.id
+                    ? {
+                        ...item,
+                        collections: item.collections.map((collection) =>
+                          collection.id === collectionId
+                            ? { ...collection, requests: [...collection.requests, request] }
+                            : collection,
+                        ),
+                      }
+                    : item,
+                ),
+                activeRequestId: request.id,
+              }));
+            }}
+            onDeleteRequest={(collectionId, requestId) => {
+              updateWorkspace((state) => {
+                const ws = getActiveWorkspace(state);
+                const nextCollections = ws.collections.map((collection) =>
+                  collection.id === collectionId
+                    ? {
+                        ...collection,
+                        requests: collection.requests.filter((r) => r.id !== requestId),
+                      }
+                    : collection,
+                );
+                const remaining = nextCollections.flatMap((c) => c.requests);
+                return {
+                  ...state,
+                  workspaces: state.workspaces.map((item) =>
+                    item.id === ws.id ? { ...item, collections: nextCollections } : item,
+                  ),
+                  activeRequestId:
+                    state.activeRequestId === requestId
+                      ? (remaining[0]?.id ?? null)
+                      : state.activeRequestId,
+                };
+              });
+            }}
+            onSelectEnvironment={(environmentId) => {
+              updateWorkspace((state) => ({ ...state, activeEnvironmentId: environmentId }));
+            }}
+            onCreateEnvironment={() => {
+              const name = window.prompt('Environment name', 'New Environment');
+              if (!name?.trim()) return;
+              const env = { id: createId(), name: name.trim(), variables: [createRow()] };
+              updateWorkspace((state) => ({
+                ...state,
+                workspaces: state.workspaces.map((item) =>
+                  item.id === workspace.id
+                    ? { ...item, environments: [...item.environments, env] }
+                    : item,
+                ),
+                activeEnvironmentId: env.id,
+              }));
+              setSidebarTab('environments');
+            }}
+            onRenameEnvironment={(environmentId, name) => {
+              updateWorkspace((state) => ({
+                ...state,
+                workspaces: state.workspaces.map((item) =>
+                  item.id === workspace.id
+                    ? {
+                        ...item,
+                        environments: item.environments.map((env) =>
+                          env.id === environmentId ? { ...env, name } : env,
+                        ),
+                      }
+                    : item,
+                ),
+              }));
+            }}
+            onDeleteEnvironment={(environmentId) => {
+              updateWorkspace((state) => {
+                const ws = getActiveWorkspace(state);
+                const nextEnvs = ws.environments.filter((env) => env.id !== environmentId);
+                return {
+                  ...state,
+                  workspaces: state.workspaces.map((item) =>
+                    item.id === ws.id ? { ...item, environments: nextEnvs } : item,
+                  ),
+                  activeEnvironmentId:
+                    state.activeEnvironmentId === environmentId
+                      ? (nextEnvs[0]?.id ?? null)
+                      : state.activeEnvironmentId,
+                };
+              });
+            }}
+            onUpdateEnvironmentVariables={(environmentId, variables) => {
+              updateWorkspace((state) => ({
+                ...state,
+                workspaces: state.workspaces.map((item) =>
+                  item.id === workspace.id
+                    ? {
+                        ...item,
+                        environments: item.environments.map((env) =>
+                          env.id === environmentId ? { ...env, variables } : env,
+                        ),
+                      }
+                    : item,
+                ),
+              }));
+            }}
+          />
+        )}
 
-                  {bodyMessage && <p className="text-sm text-amber-300">{bodyMessage}</p>}
-                </div>
-              )}
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                value={requestName}
+                onChange={(e) => setRequestName(e.target.value)}
+                placeholder="Request name"
+                className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand sm:max-w-[220px]"
+              />
+              <select
+                value={method}
+                onChange={(e) => setMethod(e.target.value as HttpMethod)}
+                className="rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-100 outline-none focus:border-brand"
+              >
+                {METHODS.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                inputMode="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="{{baseUrl}}/api/v1/auth/login"
+                title={previewUrl || 'Enter a request URL (supports {{variables}})'}
+                className="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100 outline-none focus:border-brand"
+              />
+              <button
+                type="button"
+                onClick={handleSaveRequest}
+                className="rounded-md border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSend()}
+                disabled={sending}
+                className="rounded-md bg-brand px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-60"
+              >
+                {sending ? 'Sending…' : 'Send'}
+              </button>
             </div>
-          </div>
 
-          {error && (
-            <p className="rounded-md border border-red-900/60 bg-red-950/40 px-3 py-2 text-sm text-red-300">
-              {error}
+            {saveMessage && <p className="text-sm text-emerald-400">{saveMessage}</p>}
+
+            <p className="truncate font-mono text-xs text-slate-500" title={previewUrl}>
+              {previewUrl || 'Enter a URL to preview the final request'}
             </p>
-          )}
 
-          {result && (
             <div className="rounded-lg border border-slate-700 bg-slate-900/40">
-              <div className="flex flex-wrap items-center gap-3 border-b border-slate-700 px-3 py-2 text-sm">
-                <span className="font-medium text-white">Response</span>
-                <span className={`font-mono font-semibold ${statusTone(result.status)}`}>
-                  {result.status} {result.statusText}
-                </span>
-                <span className="text-slate-400">{result.durationMs} ms</span>
-                <span className="text-slate-400">{formatBytes(result.sizeBytes)}</span>
-              </div>
-
-              <div className="flex gap-1 border-b border-slate-700 px-2 py-2">
+              <div className="flex flex-wrap items-center gap-1 border-b border-slate-700 px-2 py-2">
                 <button
                   type="button"
-                  className={tabBtn(responseTab === 'body')}
-                  onClick={() => setResponseTab('body')}
+                  className={tabBtn(activeRequestTab === 'params')}
+                  onClick={() => setRequestTab('params')}
+                >
+                  Params
+                </button>
+                <button
+                  type="button"
+                  className={tabBtn(activeRequestTab === 'headers')}
+                  onClick={() => setRequestTab('headers')}
+                >
+                  Headers
+                </button>
+                <button
+                  type="button"
+                  className={tabBtn(activeRequestTab === 'body')}
+                  onClick={() => setRequestTab('body')}
+                  disabled={!supportsBody}
                 >
                   Body
                 </button>
-                <button
-                  type="button"
-                  className={tabBtn(responseTab === 'headers')}
-                  onClick={() => setResponseTab('headers')}
-                >
-                  Headers ({result.headers.length})
-                </button>
+                {supportsBody && (
+                  <button
+                    type="button"
+                    onClick={loadFromEditor}
+                    className="ml-auto rounded-md px-3 py-1.5 text-xs text-brand hover:underline"
+                  >
+                    Use editor JSON
+                  </button>
+                )}
               </div>
 
               <div className="p-3">
-                {responseTab === 'body' ? (
-                  result.body ? (
-                    isValidJson(result.body).ok ? (
-                      <JsonViewer value={result.body} />
+                {activeRequestTab === 'params' && (
+                  <KeyValueEditor
+                    title="Query params"
+                    rows={queryParams}
+                    onChange={setQueryParams}
+                    keyPlaceholder="Key"
+                    valuePlaceholder="Value"
+                  />
+                )}
+                {activeRequestTab === 'headers' && (
+                  <KeyValueEditor
+                    title="Headers"
+                    rows={headers}
+                    onChange={setHeaders}
+                    keyPlaceholder="Header"
+                    valuePlaceholder="Value"
+                  />
+                )}
+                {activeRequestTab === 'body' && (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <label className="flex items-center gap-2 text-sm text-slate-300">
+                        <input
+                          type="radio"
+                          name="body-mode"
+                          checked={bodyMode === 'none'}
+                          onChange={() => applyBodyMode('none')}
+                          className="accent-brand"
+                        />
+                        none
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-slate-300">
+                        <input
+                          type="radio"
+                          name="body-mode"
+                          checked={bodyMode === 'raw'}
+                          onChange={() => applyBodyMode('raw')}
+                          className="accent-brand"
+                        />
+                        raw
+                      </label>
+                      {bodyMode === 'raw' && (
+                        <select
+                          value={rawLanguage}
+                          onChange={(e) => applyRawLanguage(e.target.value as RawLanguage)}
+                          className="rounded border border-slate-600 bg-slate-950 px-2 py-1 text-sm text-brand outline-none focus:border-brand"
+                        >
+                          <option value="JSON">JSON</option>
+                          <option value="Text">Text</option>
+                        </select>
+                      )}
+                      {bodyMode === 'raw' && (
+                        <button
+                          type="button"
+                          onClick={handleBeautify}
+                          className="ml-auto text-sm text-brand hover:underline"
+                        >
+                          Beautify
+                        </button>
+                      )}
+                    </div>
+
+                    {bodyMode === 'none' ? (
+                      <p className="rounded-md border border-slate-700 bg-slate-950/60 px-3 py-8 text-center text-sm text-slate-400">
+                        This request does not have a body
+                      </p>
                     ) : (
-                      <pre className="max-h-[360px] overflow-auto rounded-md border border-slate-800 bg-slate-950/80 p-3 font-mono text-[13px] text-slate-200 whitespace-pre-wrap">
-                        {result.body}
-                      </pre>
-                    )
-                  ) : (
-                    <p className="rounded-md border border-slate-800 bg-slate-950/80 px-3 py-6 text-center text-sm text-slate-400">
-                      (empty body)
-                    </p>
-                  )
-                ) : (
-                  <ul className="space-y-1.5 font-mono text-xs text-slate-300">
-                    {result.headers.length === 0 ? (
-                      <li className="text-slate-500">No response headers.</li>
-                    ) : (
-                      result.headers.map((header) => (
-                        <li key={`${header.key}:${header.value}`}>
-                          <span className="text-rose-300">{header.key}</span>
-                          <span className="text-slate-500">: </span>
-                          <span>{header.value}</span>
-                        </li>
-                      ))
+                      <textarea
+                        value={body}
+                        onChange={(e) => {
+                          setBody(e.target.value);
+                          setBodyMessage(null);
+                        }}
+                        spellCheck={false}
+                        className="min-h-[220px] w-full resize-y rounded-md border border-slate-600 bg-slate-950 p-3 font-mono text-[13px] text-slate-100 outline-none focus:border-brand"
+                        placeholder={
+                          rawLanguage === 'JSON'
+                            ? '{\n  "key": "value"\n}'
+                            : 'Enter raw request body'
+                        }
+                      />
                     )}
-                  </ul>
+
+                    {bodyMessage && <p className="text-sm text-amber-300">{bodyMessage}</p>}
+                  </div>
                 )}
               </div>
             </div>
-          )}
 
-          <p className="text-xs text-slate-500">
-            Requests run in your browser. Some APIs block cross-origin calls (CORS); use endpoints
-            that allow browser access, or a local/dev proxy.
-          </p>
+            {error && (
+              <p className="rounded-md border border-red-900/60 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+                {error}
+              </p>
+            )}
+
+            {result && (
+              <div className="rounded-lg border border-slate-700 bg-slate-900/40">
+                <div className="flex flex-wrap items-center gap-3 border-b border-slate-700 px-3 py-2 text-sm">
+                  <span className="font-medium text-white">Response</span>
+                  <span className={`font-mono font-semibold ${statusTone(result.status)}`}>
+                    {result.status} {result.statusText}
+                  </span>
+                  <span className="text-slate-400">{result.durationMs} ms</span>
+                  <span className="text-slate-400">{formatBytes(result.sizeBytes)}</span>
+                </div>
+
+                <div className="flex gap-1 border-b border-slate-700 px-2 py-2">
+                  <button
+                    type="button"
+                    className={tabBtn(responseTab === 'body')}
+                    onClick={() => setResponseTab('body')}
+                  >
+                    Body
+                  </button>
+                  <button
+                    type="button"
+                    className={tabBtn(responseTab === 'headers')}
+                    onClick={() => setResponseTab('headers')}
+                  >
+                    Headers ({result.headers.length})
+                  </button>
+                </div>
+
+                <div className="p-3">
+                  {responseTab === 'body' ? (
+                    result.body ? (
+                      isValidJson(result.body).ok ? (
+                        <JsonViewer value={result.body} />
+                      ) : (
+                        <pre className="max-h-[360px] overflow-auto rounded-md border border-slate-800 bg-slate-950/80 p-3 font-mono text-[13px] text-slate-200 whitespace-pre-wrap">
+                          {result.body}
+                        </pre>
+                      )
+                    ) : (
+                      <p className="rounded-md border border-slate-800 bg-slate-950/80 px-3 py-6 text-center text-sm text-slate-400">
+                        (empty body)
+                      </p>
+                    )
+                  ) : (
+                    <ul className="space-y-1.5 font-mono text-xs text-slate-300">
+                      {result.headers.length === 0 ? (
+                        <li className="text-slate-500">No response headers.</li>
+                      ) : (
+                        result.headers.map((header) => (
+                          <li key={`${header.key}:${header.value}`}>
+                            <span className="text-rose-300">{header.key}</span>
+                            <span className="text-slate-500">: </span>
+                            <span>{header.value}</span>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-slate-500">
+              Workspaces, collections, and environments are saved in this browser. Use {'{{variable}}'}{' '}
+              in URLs, headers, and body with the active environment.
+            </p>
+          </div>
         </div>
       </div>
     </div>
