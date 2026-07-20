@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { JsonViewer } from '@/components/editor/JsonViewer';
 import { WorkspaceSidebar } from '@/components/editor/WorkspaceSidebar';
 import { rowsToVariableMap, substituteVariables } from '@/lib/request-variables';
@@ -212,6 +212,7 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [result, setResult] = useState<RequestResult | null>(null);
+  const sendGenerationRef = useRef(0);
 
   const workspace = getActiveWorkspace(workspaceState);
   const activeEnvironment = getActiveEnvironment(workspaceState);
@@ -225,7 +226,14 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
   }, [workspaceState]);
 
   useEffect(() => {
-    if (!workspaceState.activeRequestId) return;
+    sendGenerationRef.current += 1;
+    if (!workspaceState.activeRequestId) {
+      setResult(null);
+      setError(null);
+      setSaveMessage(null);
+      setBodyMessage(null);
+      return;
+    }
     const ws = getActiveWorkspace(workspaceState);
     const found = findRequest(ws, workspaceState.activeRequestId);
     if (!found) return;
@@ -240,6 +248,10 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
     setRawLanguage(form.rawLanguage);
     setError(null);
     setSaveMessage(null);
+    setResult(null);
+    setBodyMessage(null);
+    setSending(false);
+    setResponseTab('body');
   }, [workspaceState.activeRequestId, workspaceState.activeWorkspaceId]);
 
   const supportsBody = BODY_METHODS.has(method);
@@ -436,14 +448,17 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
   }, [url, queryParams, envVariables]);
 
   async function handleSend() {
+    const sendId = ++sendGenerationRef.current;
     setSending(true);
     setError(null);
     setResult(null);
 
     const resolvedUrl = substituteVariables(url.trim(), envVariables);
     if (!resolvedUrl) {
-      setError('Enter a request URL.');
-      setSending(false);
+      if (sendGenerationRef.current === sendId) {
+        setError('Enter a request URL.');
+        setSending(false);
+      }
       return;
     }
 
@@ -457,8 +472,10 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
         })),
       );
     } catch {
-      setError('Enter a valid URL (including https://).');
-      setSending(false);
+      if (sendGenerationRef.current === sendId) {
+        setError('Enter a valid URL (including https://).');
+        setSending(false);
+      }
       return;
     }
 
@@ -478,12 +495,16 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
     const started = performance.now();
     try {
       const response = await fetch(finalUrl, init);
+      if (sendGenerationRef.current !== sendId) return;
+
       const durationMs = Math.round(performance.now() - started);
       const responseHeaders = [...response.headers.entries()].map(([key, value]) => ({
         key,
         value,
       }));
       const rawBody = method === 'HEAD' ? '' : await response.text();
+      if (sendGenerationRef.current !== sendId) return;
+
       const contentType = response.headers.get('content-type');
       const pretty = prettyBody(rawBody, contentType);
 
@@ -498,6 +519,7 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
       });
       setResponseTab('body');
     } catch (err) {
+      if (sendGenerationRef.current !== sendId) return;
       const message =
         err instanceof TypeError
           ? 'Request failed — the endpoint may block browser CORS, or the network is unavailable.'
@@ -506,7 +528,9 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
             : 'Request failed.';
       setError(message);
     } finally {
-      setSending(false);
+      if (sendGenerationRef.current === sendId) {
+        setSending(false);
+      }
     }
   }
 
@@ -573,10 +597,8 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
                 };
               });
             }}
-            onCreateWorkspace={() => {
-              const name = window.prompt('Workspace name', 'New Workspace');
-              if (!name?.trim()) return;
-              const newWorkspace = createEmptyWorkspace(name.trim());
+            onCreateWorkspace={(name) => {
+              const newWorkspace = createEmptyWorkspace(name);
               updateWorkspace((state) => ({
                 ...state,
                 workspaces: [...state.workspaces, newWorkspace],
@@ -588,9 +610,7 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
             onSelectRequest={(requestId) => {
               updateWorkspace((state) => ({ ...state, activeRequestId: requestId }));
             }}
-            onCreateCollection={() => {
-              const name = window.prompt('Collection name', 'New Collection');
-              if (!name?.trim()) return;
+            onCreateCollection={(name) => {
               const collectionId = createId();
               const request = {
                 id: createId(),
@@ -611,7 +631,7 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
                         ...item,
                         collections: [
                           ...item.collections,
-                          { id: collectionId, name: name.trim(), requests: [request] },
+                          { id: collectionId, name, requests: [request] },
                         ],
                       }
                     : item,
@@ -648,10 +668,10 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
                 };
               });
             }}
-            onCreateRequest={(collectionId) => {
+            onCreateRequest={(collectionId, name) => {
               const request = {
                 id: createId(),
-                name: 'New Request',
+                name,
                 method: 'GET' as HttpMethod,
                 url: '',
                 headers: [createRow('Accept', 'application/json')],
@@ -704,10 +724,8 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
             onSelectEnvironment={(environmentId) => {
               updateWorkspace((state) => ({ ...state, activeEnvironmentId: environmentId }));
             }}
-            onCreateEnvironment={() => {
-              const name = window.prompt('Environment name', 'New Environment');
-              if (!name?.trim()) return;
-              const env = { id: createId(), name: name.trim(), variables: [createRow()] };
+            onCreateEnvironment={(name) => {
+              const env = { id: createId(), name, variables: [createRow()] };
               updateWorkspace((state) => ({
                 ...state,
                 workspaces: state.workspaces.map((item) =>
@@ -793,7 +811,7 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
                 inputMode="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="{{baseUrl}}/api/v1/auth/login"
+                placeholder="Enter URL or paste text"
                 title={previewUrl || 'Enter a request URL (supports {{variables}})'}
                 className="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100 outline-none focus:border-brand"
               />

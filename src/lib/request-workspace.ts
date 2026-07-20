@@ -62,50 +62,12 @@ export function createRow(key = '', value = ''): KeyValueRow {
   };
 }
 
-function defaultRequest(name = 'New Request'): SavedRequest {
-  return {
-    id: createId(),
-    name,
-    method: 'GET',
-    url: '',
-    headers: [createRow('Accept', 'application/json')],
-    queryParams: [createRow()],
-    body: '{\n  \n}\n',
-    bodyMode: 'none',
-    rawLanguage: 'JSON',
-  };
-}
-
 function defaultWorkspace(): Workspace {
-  const collectionId = createId();
-  const request = defaultRequest('Sample GET');
-  request.url = 'https://httpbin.org/get';
-
   return {
     id: createId(),
     name: 'My Workspace',
-    collections: [
-      {
-        id: collectionId,
-        name: 'My Collection',
-        requests: [request],
-      },
-    ],
-    environments: [
-      {
-        id: createId(),
-        name: 'Development',
-        variables: [
-          createRow('baseUrl', 'https://httpbin.org'),
-          createRow('apiKey', 'dev-key'),
-        ],
-      },
-      {
-        id: createId(),
-        name: 'Production',
-        variables: [createRow('baseUrl', 'https://api.example.com')],
-      },
-    ],
+    collections: [],
+    environments: [],
   };
 }
 
@@ -121,8 +83,8 @@ export function createDefaultState(): WorkspaceState {
   return {
     workspaces: [workspace],
     activeWorkspaceId: workspace.id,
-    activeEnvironmentId: workspace.environments[0]?.id ?? null,
-    activeRequestId: workspace.collections[0]?.requests[0]?.id ?? null,
+    activeEnvironmentId: null,
+    activeRequestId: null,
   };
 }
 
