@@ -5,6 +5,7 @@ import { TreeEditor } from '@/components/editor/TreeEditor';
 import { EditorToolbar } from '@/components/editor/EditorToolbar';
 import { StatusBar } from '@/components/editor/StatusBar';
 import { ShareDialog } from '@/components/blob/ShareDialog';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ApiError, createBlob, deleteBlob, getBlob, updateBlob } from '@/lib/api-client';
 import { clearEditToken, getEditToken, setEditToken } from '@/lib/auth';
 import {
@@ -26,6 +27,8 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const [shareOpen, setShareOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
   const {
@@ -129,18 +132,26 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
     }
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!activeId || !editToken) return;
-    if (!window.confirm('Delete this blob?')) return;
+    setDeleteConfirmOpen(true);
+  }
 
+  async function confirmDeleteBlob() {
+    if (!activeId || !editToken || deleting) return;
+
+    setDeleting(true);
     try {
       await deleteBlob(activeId, editToken);
       clearEditToken(activeId);
       reset();
+      setDeleteConfirmOpen(false);
       setStatusMessage('Blob deleted.');
       navigate('/', { replace: true });
     } catch (err) {
       setStatusMessage(err instanceof ApiError ? err.message : 'Delete failed');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -233,7 +244,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
         onUndo={handleUndo}
         onRedo={handleRedo}
         onShare={() => setShareOpen(true)}
-        onDelete={() => void handleDelete()}
+        onDelete={handleDelete}
         saving={saving}
         canSave={Boolean(user) && valid && canEdit && !loading}
         canEdit={canEdit && !loading}
@@ -301,6 +312,17 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
       {activeId && (
         <ShareDialog blobId={activeId} open={shareOpen} onClose={() => setShareOpen(false)} />
       )}
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title={`Delete "${blobName.trim() || 'Untitled blob'}"?`}
+        description="This will permanently delete the blob from your vault. Anyone with the share link will no longer be able to access it. This action cannot be undone."
+        confirmLabel={deleting ? 'Deleting…' : 'Delete blob'}
+        onConfirm={() => void confirmDeleteBlob()}
+        onCancel={() => {
+          if (!deleting) setDeleteConfirmOpen(false);
+        }}
+      />
     </div>
   );
 }
