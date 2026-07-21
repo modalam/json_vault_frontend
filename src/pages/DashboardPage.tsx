@@ -63,9 +63,37 @@ export function DashboardPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-white">Dashboard</h1>
         <p className="mt-1 text-sm text-slate-400">
-          Welcome back{user?.displayName ? `, ${user.displayName}` : ''}.
+          Welcome back{user?.displayName ? `, ${user.displayName}` : ''}. Choose a tool from the
+          left sidebar, or open a blob below.
         </p>
       </div>
+
+      <section className="mb-10 grid gap-3 sm:grid-cols-3">
+        <button
+          type="button"
+          onClick={handleNewBlob}
+          className="rounded-lg border border-slate-700 bg-surface px-4 py-4 text-left transition hover:border-brand/60 hover:bg-slate-900/80"
+        >
+          <div className="text-sm font-semibold text-white">JSON Editor</div>
+          <p className="mt-1 text-xs text-slate-400">Create or edit JSON blobs</p>
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/compare')}
+          className="rounded-lg border border-slate-700 bg-surface px-4 py-4 text-left transition hover:border-brand/60 hover:bg-slate-900/80"
+        >
+          <div className="text-sm font-semibold text-white">JSON Compare</div>
+          <p className="mt-1 text-xs text-slate-400">Diff two JSON documents</p>
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/request')}
+          className="rounded-lg border border-slate-700 bg-surface px-4 py-4 text-left transition hover:border-brand/60 hover:bg-slate-900/80"
+        >
+          <div className="text-sm font-semibold text-white">Request</div>
+          <p className="mt-1 text-xs text-slate-400">Send HTTP requests like Postman</p>
+        </button>
+      </section>
 
       {loading && <p className="text-slate-400">Loading your data…</p>}
       {error && <p className="text-red-400">{error}</p>}

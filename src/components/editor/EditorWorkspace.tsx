@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { JsonEditor } from '@/components/editor/JsonEditor';
 import { TreeEditor } from '@/components/editor/TreeEditor';
 import { EditorToolbar } from '@/components/editor/EditorToolbar';
-import { JsonCompareView } from '@/components/editor/JsonCompareView';
 import { StatusBar } from '@/components/editor/StatusBar';
 import { ShareDialog } from '@/components/blob/ShareDialog';
 import { ApiError, createBlob, deleteBlob, getBlob, updateBlob } from '@/lib/api-client';
@@ -16,7 +15,6 @@ import {
   repairJson,
   sortJson,
 } from '@/lib/json-utils';
-import { setRequestReturnPath } from '@/lib/request-navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { useEditorStore } from '@/stores/editor-store';
 
@@ -26,10 +24,8 @@ type EditorWorkspaceProps = {
 
 export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
   const navigate = useNavigate();
-  const location = useLocation();
   const user = useAuthStore((state) => state.user);
   const [shareOpen, setShareOpen] = useState(false);
-  const [compareOpen, setCompareOpen] = useState(false);
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
   const {
@@ -57,9 +53,10 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
   }, [text, setValidation]);
 
   useEffect(() => {
-    // Home / "New blob" — clear leftover state from a previous blob (SPA store persists).
+    // Preserve in-progress drafts when switching tools via the sidebar.
+    // Explicit "New" / "New blob" still call reset() before navigating here.
     if (!blobId) {
-      reset();
+      setLoading(false);
       return;
     }
 
@@ -87,7 +84,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
     return () => {
       cancelled = true;
     };
-  }, [blobId, reset, setBlobId, setBlobName, setLoading, setStatusMessage, setText]);
+  }, [blobId, setBlobId, setBlobName, setLoading, setStatusMessage, setText]);
 
   const activeId = blobId ?? storeBlobId;
   const editToken = activeId ? getEditToken(activeId) : null;
@@ -222,15 +219,6 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
     applyTextChange('{\n\n}\n');
   }
 
-  if (compareOpen) {
-    return (
-      <JsonCompareView
-        initialLeft={text.trim() ? text : ''}
-        onBack={() => setCompareOpen(false)}
-      />
-    );
-  }
-
   return (
     <div className="flex flex-1 flex-col">
       <EditorToolbar
@@ -242,11 +230,6 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
         onSort={handleSort}
         onRepair={handleRepair}
         onValidate={handleValidate}
-        onCompare={() => setCompareOpen(true)}
-        onRequest={() => {
-          setRequestReturnPath(location.pathname + location.search);
-          navigate('/request');
-        }}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onShare={() => setShareOpen(true)}

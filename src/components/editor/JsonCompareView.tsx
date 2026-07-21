@@ -364,7 +364,7 @@ export function JsonCompareView({ initialLeft = '', onBack }: JsonCompareViewPro
           onClick={onBack}
           className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
         >
-          ← Back to editor
+          ← Dashboard
         </button>
         <h2 className="text-sm font-semibold text-white">JSON Compare</h2>
         <p className="hidden text-xs text-slate-400 sm:block">

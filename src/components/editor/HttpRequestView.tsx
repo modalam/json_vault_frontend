@@ -25,6 +25,7 @@ import {
 } from '@/lib/request-workspace';
 import { formatJson, isValidJson } from '@/lib/json-utils';
 import { useAuthStore } from '@/stores/auth-store';
+import { useEditorStore } from '@/stores/editor-store';
 
 type ResponseTab = 'body' | 'headers';
 
@@ -39,12 +40,12 @@ type RequestResult = {
 };
 
 type HttpRequestViewProps = {
-  initialBody?: string;
   onBack: () => void;
 };
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 const BODY_METHODS = new Set<HttpMethod>(['POST', 'PUT', 'PATCH', 'DELETE']);
+const DEFAULT_REQUEST_BODY = '{\n  \n}\n';
 /** Stable empty UI while auth/account ownership is resolving — avoids flash of wrong collections. */
 const EMPTY_VISIBLE_STATE: WorkspaceState = createDefaultState();
 const CONTENT_TYPE_BY_RAW: Record<RawLanguage, string> = {
@@ -198,8 +199,9 @@ function loadRequestIntoForm(request: SavedRequest) {
   };
 }
 
-export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewProps) {
+export function HttpRequestView({ onBack }: HttpRequestViewProps) {
   const user = useAuthStore((state) => state.user);
+  const editorText = useEditorStore((state) => state.text);
   const authInitialized = useAuthStore((state) => state.isInitialized);
   // Start empty — never flash guest/previous-account data before auth is ready.
   const [workspaceState, setWorkspaceState] = useState<WorkspaceState>(createDefaultState);
@@ -217,7 +219,7 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
   const [url, setUrl] = useState('');
   const [headers, setHeaders] = useState<KeyValueRow[]>([createRow('Accept', 'application/json')]);
   const [queryParams, setQueryParams] = useState<KeyValueRow[]>([createRow()]);
-  const [body, setBody] = useState(initialBody.trim() ? initialBody : '{\n  \n}\n');
+  const [body, setBody] = useState(DEFAULT_REQUEST_BODY);
   const [bodyMode, setBodyMode] = useState<BodyMode>('none');
   const [rawLanguage, setRawLanguage] = useState<RawLanguage>('JSON');
   const [bodyMessage, setBodyMessage] = useState<string | null>(null);
@@ -368,7 +370,7 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
       setUrl('');
       setHeaders([createRow('Accept', 'application/json')]);
       setQueryParams([createRow()]);
-      setBody(initialBody.trim() ? initialBody : '{\n  \n}\n');
+      setBody(DEFAULT_REQUEST_BODY);
       setBodyMode('none');
       setRawLanguage('JSON');
       setResult(null);
@@ -399,7 +401,6 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
   }, [
     visibleWorkspaceState.activeRequestId,
     visibleWorkspaceState.activeWorkspaceId,
-    initialBody,
   ]);
 
   const supportsBody = BODY_METHODS.has(method);
@@ -686,7 +687,7 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
     setBodyMode('raw');
     setRawLanguage('JSON');
     setHeaders((rows) => upsertHeader(rows, 'Content-Type', CONTENT_TYPE_BY_RAW.JSON));
-    setBody(initialBody.trim() ? initialBody : '{\n  \n}\n');
+    setBody(editorText.trim() ? editorText : DEFAULT_REQUEST_BODY);
     setBodyMessage(null);
     setRequestTab('body');
   }
@@ -706,7 +707,7 @@ export function HttpRequestView({ initialBody = '', onBack }: HttpRequestViewPro
           onClick={onBack}
           className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-700"
         >
-          ← Back to editor
+          ← Dashboard
         </button>
         <button
           type="button"
