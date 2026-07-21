@@ -6,7 +6,7 @@ import { EditorToolbar } from '@/components/editor/EditorToolbar';
 import { StatusBar } from '@/components/editor/StatusBar';
 import { ShareDialog } from '@/components/blob/ShareDialog';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { ApiError, createBlob, deleteBlob, getBlob, updateBlob } from '@/lib/api-client';
+import { ApiError, createBlob, deleteBlob, getBlob, listBlobs, updateBlob } from '@/lib/api-client';
 import { clearEditToken, getEditToken, setEditToken } from '@/lib/auth';
 import {
   byteSize,
@@ -70,11 +70,19 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
     void (async () => {
       try {
         const token = getEditToken(blobId);
-        const content = await getBlob(blobId, token);
+        // Fetch both content and blob metadata (name) so the editor and delete dialog
+        // show the correct saved blob name (e.g. "companyList") instead of "Untitled blob".
+        const [content, allBlobs] = await Promise.all([
+          getBlob(blobId, token),
+          // listBlobs is the only frontend API that returns blob "name" today.
+          // Keep the limit reasonably high to cover recently-created blobs.
+          listBlobs(100),
+        ]);
         if (cancelled) return;
         setText(JSON.stringify(content, null, 2), { fromRemote: true });
         setBlobId(blobId);
-        setBlobName('');
+        const meta = allBlobs.find((b) => b.id === blobId);
+        setBlobName(meta?.name ?? '');
         setStatusMessage(token ? 'Loaded (editable)' : 'Loaded (read-only without edit token)');
       } catch (err) {
         if (cancelled) return;
