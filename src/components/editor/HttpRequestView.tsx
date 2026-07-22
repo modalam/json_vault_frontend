@@ -4,6 +4,7 @@ import { WorkspaceSidebar } from '@/components/editor/WorkspaceSidebar';
 import * as api from '@/lib/api-client';
 import { rowsToVariableMap, substituteVariables } from '@/lib/request-variables';
 import { importFiles, mergeImportIntoWorkspace } from '@/lib/request-import';
+import { importCurlText } from '@/lib/curl-import';
 import {
   createEmptyWorkspace,
   createId,
@@ -24,12 +25,6 @@ import {
   type WorkspaceState,
 } from '@/lib/request-workspace';
 import { formatJson, isValidJson } from '@/lib/json-utils';
-import {
-  formatSecretFindingsMessage,
-  scanRequestForSecrets,
-  type SecretFinding,
-} from '@/lib/secrets-scan';
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useAuthStore } from '@/stores/auth-store';
 import { useEditorStore } from '@/stores/editor-store';
 
@@ -236,8 +231,6 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [result, setResult] = useState<RequestResult | null>(null);
-  const [secretsWarnOpen, setSecretsWarnOpen] = useState(false);
-  const [secretsWarnFindings, setSecretsWarnFindings] = useState<SecretFinding[]>([]);
   const sendGenerationRef = useRef(0);
   const skipNextRemoteSaveRef = useRef(false);
   const remoteReadyRef = useRef(false);
@@ -533,6 +526,16 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
   async function handleImportFiles(files: File[]) {
     setImportMessage(null);
     const imported = await importFiles(files);
+    applyImportedResult(imported);
+  }
+
+  function handleImportCurl(curlText: string) {
+    setImportMessage(null);
+    const imported = importCurlText(curlText);
+    applyImportedResult(imported);
+  }
+
+  function applyImportedResult(imported: Awaited<ReturnType<typeof importFiles>>) {
     const hasItems = imported.collections.length > 0 || imported.environments.length > 0;
 
     if (!hasItems) {
@@ -541,15 +544,11 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
     }
 
     let firstRequestId: string | null = null;
-    let firstEnvironmentId: string | null = workspaceState.activeEnvironmentId;
 
     updateWorkspace((state) => {
       const ws = getActiveWorkspace(state);
       const merged = mergeImportIntoWorkspace(ws, imported);
       firstRequestId = merged.firstRequestId;
-      if (imported.environments.length > 0 && !firstEnvironmentId) {
-        firstEnvironmentId = imported.environments[0]?.id ?? null;
-      }
       return {
         ...state,
         workspaces: state.workspaces.map((item) =>
@@ -577,18 +576,22 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
 
     const parts: string[] = [];
     if (imported.collections.length > 0) {
+      const requestCount = imported.collections.reduce((n, c) => n + c.requests.length, 0);
       parts.push(
         `${imported.collections.length} collection${imported.collections.length === 1 ? '' : 's'}`,
       );
+      if (requestCount > 0) {
+        parts.push(`${requestCount} request${requestCount === 1 ? '' : 's'}`);
+      }
     }
     if (imported.environments.length > 0) {
       parts.push(
         `${imported.environments.length} environment${imported.environments.length === 1 ? '' : 's'}`,
       );
     }
-    const summary = `Imported ${parts.join(' and ')}.`;
+    const summary = `Imported ${parts.join(', ')}.`;
     setImportMessage(
-      imported.errors.length > 0 ? `${summary} ${imported.errors.length} file(s) skipped.` : summary,
+      imported.errors.length > 0 ? `${summary} ${imported.errors.length} issue(s).` : summary,
     );
   }
 
@@ -603,34 +606,6 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
       return substituteVariables(url, envVariables);
     }
   }, [url, queryParams, envVariables]);
-
-  function handleSendClick() {
-    const findings = scanRequestForSecrets({
-      url: substituteVariables(url.trim(), envVariables),
-      headers: headers
-        .filter((row) => row.enabled && row.key.trim())
-        .map((row) => ({
-          key: row.key,
-          value: substituteVariables(row.value, envVariables),
-        })),
-      queryParams: queryParams
-        .filter((row) => row.enabled && row.key.trim())
-        .map((row) => ({
-          key: row.key,
-          value: substituteVariables(row.value, envVariables),
-        })),
-      body: supportsBody && bodyMode === 'raw' ? substituteVariables(body, envVariables) : '',
-      envValues: Object.values(envVariables),
-    });
-
-    if (findings.length > 0) {
-      setSecretsWarnFindings(findings);
-      setSecretsWarnOpen(true);
-      return;
-    }
-
-    void handleSend();
-  }
 
   async function handleSend() {
     const sendId = ++sendGenerationRef.current;
@@ -736,7 +711,6 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
     }`;
 
   return (
-    <>
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-700 bg-surface px-3 py-2">
         <button
@@ -784,6 +758,7 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
             activeTab={sidebarTab}
             onSwitchTab={setSidebarTab}
             onImportFiles={handleImportFiles}
+            onImportCurl={handleImportCurl}
             onSwitchWorkspace={(workspaceId) => {
               updateWorkspace((state) => {
                 const nextWorkspace = state.workspaces.find((w) => w.id === workspaceId);
@@ -1041,7 +1016,7 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
               </button>
               <button
                 type="button"
-                onClick={handleSendClick}
+                onClick={() => void handleSend()}
                 disabled={sending}
                 className="rounded-md bg-brand px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-60"
               >
@@ -1258,20 +1233,5 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
         </div>
       </div>
     </div>
-
-    <ConfirmDialog
-      open={secretsWarnOpen}
-      title="Possible secrets or PII detected"
-      description={formatSecretFindingsMessage(secretsWarnFindings, 'send')}
-      confirmLabel="Send anyway"
-      cancelLabel="Cancel"
-      tone="danger"
-      onConfirm={() => {
-        setSecretsWarnOpen(false);
-        void handleSend();
-      }}
-      onCancel={() => setSecretsWarnOpen(false)}
-    />
-    </>
   );
 }

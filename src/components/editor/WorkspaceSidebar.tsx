@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from 'react';
 import { ConfirmDialog, NameDialog } from '@/components/ui/ConfirmDialog';
+import { CurlImportDialog } from '@/components/editor/CurlImportDialog';
 import type { Environment, Workspace, WorkspaceState } from '@/lib/request-workspace';
 import { createRow } from '@/lib/request-workspace';
 
@@ -42,6 +43,7 @@ type WorkspaceSidebarProps = {
   onCreateRequest: (collectionId: string, name: string) => void;
   onDeleteRequest: (collectionId: string, requestId: string) => void;
   onImportFiles: (files: File[]) => Promise<void>;
+  onImportCurl: (curlText: string) => void;
   onSelectEnvironment: (environmentId: string | null) => void;
   onCreateEnvironment: (name: string) => void;
   onRenameEnvironment: (environmentId: string, name: string) => void;
@@ -84,6 +86,7 @@ export function WorkspaceSidebar({
   onCreateRequest,
   onDeleteRequest,
   onImportFiles,
+  onImportCurl,
   onSelectEnvironment,
   onCreateEnvironment,
   onRenameEnvironment,
@@ -93,6 +96,7 @@ export function WorkspaceSidebar({
   const fileInputId = useId();
   const folderInputId = useId();
   const [importing, setImporting] = useState(false);
+  const [curlImportOpen, setCurlImportOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
@@ -370,6 +374,13 @@ export function WorkspaceSidebar({
                   Import folder
                 </label>
               </div>
+              <button
+                type="button"
+                onClick={() => setCurlImportOpen(true)}
+                className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
+              >
+                Import cURL
+              </button>
               <input
                 id={fileInputId}
                 type="file"
@@ -394,7 +405,8 @@ export function WorkspaceSidebar({
                 }}
               />
               <p className="text-[11px] leading-relaxed text-slate-500">
-                Supports Postman collections, Postman environments, and JSON Vault exports (.json).
+                Supports Postman collections/environments, JSON Vault exports (.json), and paste
+                cURL.
               </p>
               {importMessage && (
                 <p className="rounded-md border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-xs text-slate-300">
@@ -684,6 +696,15 @@ export function WorkspaceSidebar({
           onCancel={() => setConfirmDialog(null)}
         />
       )}
+
+      <CurlImportDialog
+        open={curlImportOpen}
+        onClose={() => setCurlImportOpen(false)}
+        onImport={(curlText) => {
+          setCurlImportOpen(false);
+          onImportCurl(curlText);
+        }}
+      />
     </>
   );
 }
