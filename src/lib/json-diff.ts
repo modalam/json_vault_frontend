@@ -109,3 +109,79 @@ export function collectDiffPaths(entries: DiffEntry[]): {
 export function formatJsonValue(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
+
+function shortValue(value: unknown, max = 48): string {
+  let text: string;
+  try {
+    text = JSON.stringify(value);
+  } catch {
+    text = String(value);
+  }
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+}
+
+function pathLabel(path: string): string {
+  return path === '(root)' ? 'the root value' : `\`${path}\``;
+}
+
+/**
+ * Human-readable explanation of a semantic diff — template-based, no LLM.
+ */
+export function explainDiff(entries: DiffEntry[]): string {
+  if (entries.length === 0) {
+    return 'No differences. Left and right are semantically equal (object key order is ignored).';
+  }
+
+  const summary = summarizeDiff(entries);
+  const lines: string[] = [];
+
+  const parts: string[] = [];
+  if (summary.added) parts.push(`${summary.added} added`);
+  if (summary.removed) parts.push(`${summary.removed} removed`);
+  if (summary.changed) parts.push(`${summary.changed} changed`);
+  lines.push(`Found ${entries.length} difference${entries.length === 1 ? '' : 's'}: ${parts.join(', ')}.`);
+  lines.push('Comparison is semantic — object key order does not count as a change.');
+
+  const added = entries.filter((e) => e.kind === 'added');
+  const removed = entries.filter((e) => e.kind === 'removed');
+  const changed = entries.filter((e) => e.kind === 'changed');
+  const previewLimit = 8;
+
+  if (added.length) {
+    lines.push('');
+    lines.push(`Added on the right (${added.length}):`);
+    for (const entry of added.slice(0, previewLimit)) {
+      lines.push(`• ${pathLabel(entry.path)} = ${shortValue(entry.right)}`);
+    }
+    if (added.length > previewLimit) {
+      lines.push(`• …and ${added.length - previewLimit} more`);
+    }
+  }
+
+  if (removed.length) {
+    lines.push('');
+    lines.push(`Removed from the left (${removed.length}):`);
+    for (const entry of removed.slice(0, previewLimit)) {
+      lines.push(`• ${pathLabel(entry.path)} was ${shortValue(entry.left)}`);
+    }
+    if (removed.length > previewLimit) {
+      lines.push(`• …and ${removed.length - previewLimit} more`);
+    }
+  }
+
+  if (changed.length) {
+    lines.push('');
+    lines.push(`Changed values (${changed.length}):`);
+    for (const entry of changed.slice(0, previewLimit)) {
+      lines.push(
+        `• ${pathLabel(entry.path)}: ${shortValue(entry.left)} → ${shortValue(entry.right)}`,
+      );
+    }
+    if (changed.length > previewLimit) {
+      lines.push(`• …and ${changed.length - previewLimit} more`);
+    }
+  }
+
+  return lines.join('\n');
+}

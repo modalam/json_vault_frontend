@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import {
   collectDiffPaths,
   diffJson,
+  explainDiff,
   formatJsonValue,
   summarizeDiff,
   type DiffEntry,
@@ -432,6 +433,15 @@ export function JsonCompareView({ initialLeft = '', onBack }: JsonCompareViewPro
                 <span className="text-emerald-400">{summary.added} added</span>
                 <span className="text-red-400">{summary.removed} removed</span>
                 <span className="text-amber-300">{summary.changed} changed</span>
+              </div>
+
+              <div className="rounded-md border border-slate-700 bg-slate-950/70 px-3 py-3">
+                <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                  Explanation
+                </div>
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-300">
+                  {explainDiff(result.entries)}
+                </pre>
               </div>
 
               <ChangeList entries={result.entries} />

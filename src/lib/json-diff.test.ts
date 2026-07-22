@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffJson, summarizeDiff } from '@/lib/json-diff';
+import { diffJson, explainDiff, summarizeDiff } from '@/lib/json-diff';
 
 describe('json-diff', () => {
   it('returns empty when objects are semantically equal', () => {
@@ -34,5 +34,24 @@ describe('json-diff', () => {
         { path: 'users[1]', kind: 'removed', left: { id: 2 } },
       ]),
     );
+  });
+
+  it('explains diffs in plain language without an LLM', () => {
+    const entries = diffJson(
+      { name: 'Ada', age: 30, city: 'London' },
+      { name: 'Ada', age: 31, country: 'UK' },
+    );
+    const text = explainDiff(entries);
+    expect(text).toContain('Found 3 differences');
+    expect(text).toContain('Added on the right');
+    expect(text).toContain('Removed from the left');
+    expect(text).toContain('Changed values');
+    expect(text).toContain('`country`');
+    expect(text).toContain('`city`');
+    expect(text).toContain('`age`');
+  });
+
+  it('explains equal documents', () => {
+    expect(explainDiff([])).toMatch(/semantically equal/i);
   });
 });

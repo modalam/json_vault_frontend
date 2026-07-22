@@ -16,6 +16,7 @@ import {
   repairJson,
   sortJson,
 } from '@/lib/json-utils';
+import { shouldAutoSuggestName, suggestBlobName } from '@/lib/suggest-blob-name';
 import { useAuthStore } from '@/stores/auth-store';
 import { useEditorStore } from '@/stores/editor-store';
 
@@ -115,29 +116,61 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
       return;
     }
 
+    let nameToSave = blobName.trim();
+    if (shouldAutoSuggestName(nameToSave)) {
+      const suggested = suggestBlobName(parsed.value);
+      if (suggested) {
+        nameToSave = suggested;
+        setBlobName(suggested);
+      }
+    }
+
     setSaving(true);
     try {
       if (!activeId) {
-        const created = await createBlob(parsed.value, blobName || undefined);
+        const created = await createBlob(parsed.value, nameToSave || undefined);
         setEditToken(created.id, created.editToken);
         setBlobId(created.id);
         setText(text, { fromRemote: true });
-        setStatusMessage('Blob saved successfully.');
+        setStatusMessage(
+          nameToSave
+            ? `Blob saved as "${nameToSave}".`
+            : 'Blob saved successfully.',
+        );
         navigate(`/b/${created.id}`, { replace: true });
       } else {
         if (!editToken) {
           setStatusMessage('No edit token found for this blob.');
           return;
         }
-        await updateBlob(activeId, parsed.value, editToken, blobName || undefined);
+        await updateBlob(activeId, parsed.value, editToken, nameToSave || undefined);
         setText(text, { fromRemote: true });
-        setStatusMessage('Blob updated successfully.');
+        setStatusMessage(
+          nameToSave
+            ? `Blob updated as "${nameToSave}".`
+            : 'Blob updated successfully.',
+        );
       }
     } catch (err) {
       setStatusMessage(err instanceof ApiError ? err.message : 'Save failed');
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleSuggestName() {
+    const parsed = isValidJson(text);
+    if (!parsed.ok) {
+      setStatusMessage('Fix JSON before suggesting a name.');
+      return;
+    }
+    const suggested = suggestBlobName(parsed.value);
+    if (!suggested) {
+      setStatusMessage('Could not suggest a name from this JSON.');
+      return;
+    }
+    setBlobName(suggested);
+    setStatusMessage(`Suggested name: "${suggested}".`);
   }
 
   function handleDelete() {
@@ -282,13 +315,25 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
             <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
               Tree View
             </span>
-            <input
-              value={blobName}
-              onChange={(e) => setBlobName(e.target.value)}
-              disabled={!canEdit}
-              placeholder="Untitled blob"
-              className="ml-auto max-w-[14rem] rounded border border-slate-600 bg-slate-950 px-2 py-0.5 text-xs text-slate-200"
-            />
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
+              <input
+                value={blobName}
+                onChange={(e) => setBlobName(e.target.value)}
+                disabled={!canEdit}
+                placeholder="Untitled blob"
+                className="max-w-[12rem] rounded border border-slate-600 bg-slate-950 px-2 py-0.5 text-xs text-slate-200 disabled:opacity-50"
+                aria-label="Blob name"
+              />
+              <button
+                type="button"
+                onClick={handleSuggestName}
+                disabled={!canEdit || !valid || loading}
+                className="shrink-0 rounded border border-slate-600 bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                title="Suggest a name from the JSON content (no AI cost)"
+              >
+                Suggest
+              </button>
+            </div>
           </div>
           {activeId && (
             <div className="border-b border-slate-800 px-3 py-1 font-mono text-[11px] text-sky-400/90">
