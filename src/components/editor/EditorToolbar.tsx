@@ -7,6 +7,7 @@ type EditorToolbarProps = {
   onSort: () => void;
   onRepair: () => void;
   onValidate: () => void;
+  onExportSchema: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onShare: () => void;
@@ -18,6 +19,7 @@ type EditorToolbarProps = {
   canRedo: boolean;
   canShare: boolean;
   canDelete: boolean;
+  canExportSchema: boolean;
 };
 
 export function EditorToolbar({
@@ -29,6 +31,7 @@ export function EditorToolbar({
   onSort,
   onRepair,
   onValidate,
+  onExportSchema,
   onUndo,
   onRedo,
   onShare,
@@ -40,6 +43,7 @@ export function EditorToolbar({
   canRedo,
   canShare,
   canDelete,
+  canExportSchema,
 }: EditorToolbarProps) {
   const btn =
     'rounded-md px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40';
@@ -77,6 +81,16 @@ export function EditorToolbar({
       </button>
       <button type="button" className={ghost} onClick={onValidate}>
         Validate
+      </button>
+      <button
+        type="button"
+        className={ghost}
+        onClick={onExportSchema}
+        disabled={!canExportSchema}
+        data-testid="export-schema-button"
+        title="Export JSON Schema or TypeScript types"
+      >
+        Export schema
       </button>
       <button type="button" className={ghost} onClick={onUndo} disabled={!canUndo || !canEdit}>
         Undo

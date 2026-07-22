@@ -5,6 +5,7 @@ import { TreeEditor } from '@/components/editor/TreeEditor';
 import { EditorToolbar } from '@/components/editor/EditorToolbar';
 import { StatusBar } from '@/components/editor/StatusBar';
 import { ShareDialog } from '@/components/blob/ShareDialog';
+import { SchemaExportDialog } from '@/components/blob/SchemaExportDialog';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ApiError, createBlob, deleteBlob, getBlob, listBlobs, updateBlob } from '@/lib/api-client';
 import { clearEditToken, getEditToken, setEditToken } from '@/lib/auth';
@@ -28,6 +29,8 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const [shareOpen, setShareOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportValue, setExportValue] = useState<unknown>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [undoStack, setUndoStack] = useState<string[]>([]);
@@ -173,6 +176,16 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
     setStatusMessage(`Suggested name: "${suggested}".`);
   }
 
+  function handleExportSchema() {
+    const parsed = isValidJson(text);
+    if (!parsed.ok) {
+      setStatusMessage('Fix JSON before exporting schema or types.');
+      return;
+    }
+    setExportValue(parsed.value);
+    setExportOpen(true);
+  }
+
   function handleDelete() {
     if (!activeId || !editToken) return;
     setDeleteConfirmOpen(true);
@@ -282,6 +295,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
         onSort={handleSort}
         onRepair={handleRepair}
         onValidate={handleValidate}
+        onExportSchema={handleExportSchema}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onShare={() => setShareOpen(true)}
@@ -293,6 +307,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
         canRedo={redoStack.length > 0}
         canShare={Boolean(activeId)}
         canDelete={Boolean(activeId && editToken)}
+        canExportSchema={valid && !loading}
       />
 
       {/* Dual pane like jsonblob: JSON Editor | Tree View */}
@@ -365,6 +380,16 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
       {activeId && (
         <ShareDialog blobId={activeId} open={shareOpen} onClose={() => setShareOpen(false)} />
       )}
+
+      <SchemaExportDialog
+        open={exportOpen}
+        value={exportValue}
+        typeName={blobName.trim() || undefined}
+        onClose={() => {
+          setExportOpen(false);
+          setExportValue(null);
+        }}
+      />
 
       <ConfirmDialog
         open={deleteConfirmOpen}
