@@ -212,6 +212,28 @@ export async function saveRequestWorkspaceState(
   return body.data;
 }
 
+export type DiffExplainEntry = {
+  path: string;
+  kind: 'added' | 'removed' | 'changed';
+  left?: unknown;
+  right?: unknown;
+};
+
+export async function explainDiffWithAi(
+  entries: DiffExplainEntry[],
+): Promise<{ explanation: string; model: string; source: string }> {
+  const res = await fetchWithAuth(`${API_URL}/api/v1/ai/diff/explain`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entries }),
+  });
+  if (!res.ok) throw await parseError(res);
+  const body = (await res.json()) as {
+    data: { explanation: string; model: string; source: string };
+  };
+  return body.data;
+}
+
 export async function createBlob(content: unknown, name?: string): Promise<{ id: string; editToken: string }> {
   const res = await fetchWithAuth(`${API_URL}/api/v1/createblobs`, {
     method: 'POST',

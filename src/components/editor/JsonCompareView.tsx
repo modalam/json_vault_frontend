@@ -8,6 +8,9 @@ import {
   type DiffEntry,
 } from '@/lib/json-diff';
 import { isValidJson } from '@/lib/json-utils';
+import * as api from '@/lib/api-client';
+import { useAuthStore } from '@/stores/auth-store';
+import { Link } from 'react-router-dom';
 
 type JsonCompareViewProps = {
   initialLeft?: string;
@@ -291,6 +294,7 @@ function ComparePane({
 export function JsonCompareView({ initialLeft = '', onBack }: JsonCompareViewProps) {
   const leftFileId = useId();
   const rightFileId = useId();
+  const user = useAuthStore((state) => state.user);
   const [leftText, setLeftText] = useState(initialLeft);
   const [rightText, setRightText] = useState('');
   const [leftFileName, setLeftFileName] = useState<string | null>(null);
@@ -302,6 +306,10 @@ export function JsonCompareView({ initialLeft = '', onBack }: JsonCompareViewPro
     right: unknown;
     entries: DiffEntry[];
   } | null>(null);
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
+  const [aiModel, setAiModel] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   async function readFile(file: File | null, side: 'left' | 'right') {
     if (!file) return;
@@ -340,6 +348,9 @@ export function JsonCompareView({ initialLeft = '', onBack }: JsonCompareViewPro
       setRightText(right.text);
       const entries = diffJson(left.value, right.value);
       setResult({ left: left.value, right: right.value, entries });
+      setAiExplanation(null);
+      setAiModel(null);
+      setAiError(null);
     } finally {
       setComparing(false);
     }
@@ -352,6 +363,31 @@ export function JsonCompareView({ initialLeft = '', onBack }: JsonCompareViewPro
     setRightFileName(null);
     setResult(null);
     setError(null);
+    setAiExplanation(null);
+    setAiModel(null);
+    setAiError(null);
+  }
+
+  async function handleExplainWithAi() {
+    if (!result) return;
+    if (!user) {
+      setAiError('Sign in to use Workers AI explain (uses your free Cloudflare AI quota).');
+      return;
+    }
+
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const data = await api.explainDiffWithAi(result.entries);
+      setAiExplanation(data.explanation);
+      setAiModel(data.model);
+    } catch (err) {
+      setAiExplanation(null);
+      setAiModel(null);
+      setAiError(err instanceof Error ? err.message : 'AI explain failed.');
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   const summary = result ? summarizeDiff(result.entries) : null;
@@ -383,6 +419,8 @@ export function JsonCompareView({ initialLeft = '', onBack }: JsonCompareViewPro
                 setLeftText(value);
                 setLeftFileName(null);
                 setResult(null);
+                setAiExplanation(null);
+                setAiError(null);
               }}
               onFile={(file) => void readFile(file, 'left')}
               fileInputId={leftFileId}
@@ -413,6 +451,8 @@ export function JsonCompareView({ initialLeft = '', onBack }: JsonCompareViewPro
                 setRightText(value);
                 setRightFileName(null);
                 setResult(null);
+                setAiExplanation(null);
+                setAiError(null);
               }}
               onFile={(file) => void readFile(file, 'right')}
               fileInputId={rightFileId}
@@ -436,12 +476,52 @@ export function JsonCompareView({ initialLeft = '', onBack }: JsonCompareViewPro
               </div>
 
               <div className="rounded-md border border-slate-700 bg-slate-950/70 px-3 py-3">
-                <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                  Explanation
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                    Explanation
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleExplainWithAi()}
+                    disabled={aiLoading}
+                    className="rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-100 hover:bg-slate-700 disabled:opacity-60"
+                    title="Uses Cloudflare Workers AI free daily quota"
+                  >
+                    {aiLoading ? 'Explaining…' : 'Explain with AI'}
+                  </button>
                 </div>
                 <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-300">
                   {explainDiff(result.entries)}
                 </pre>
+
+                {!user && (
+                  <p className="mt-3 text-xs text-slate-500">
+                    <Link to="/login" className="text-brand hover:underline">
+                      Sign in
+                    </Link>{' '}
+                    to generate a richer AI explanation (Cloudflare Workers AI free tier).
+                  </p>
+                )}
+
+                {aiError && (
+                  <p className="mt-3 rounded border border-red-900/60 bg-red-950/40 px-2.5 py-2 text-xs text-red-300">
+                    {aiError}
+                  </p>
+                )}
+
+                {aiExplanation && (
+                  <div className="mt-3 rounded-md border border-sky-900/50 bg-sky-950/30 px-3 py-2">
+                    <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-sky-400/90">
+                      <span>AI explanation</span>
+                      {aiModel && (
+                        <span className="normal-case tracking-normal text-slate-500">{aiModel}</span>
+                      )}
+                    </div>
+                    <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-200">
+                      {aiExplanation}
+                    </pre>
+                  </div>
+                )}
               </div>
 
               <ChangeList entries={result.entries} />
