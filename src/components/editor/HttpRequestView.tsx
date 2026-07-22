@@ -24,6 +24,12 @@ import {
   type WorkspaceState,
 } from '@/lib/request-workspace';
 import { formatJson, isValidJson } from '@/lib/json-utils';
+import {
+  formatSecretFindingsMessage,
+  scanRequestForSecrets,
+  type SecretFinding,
+} from '@/lib/secrets-scan';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useAuthStore } from '@/stores/auth-store';
 import { useEditorStore } from '@/stores/editor-store';
 
@@ -230,6 +236,8 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [result, setResult] = useState<RequestResult | null>(null);
+  const [secretsWarnOpen, setSecretsWarnOpen] = useState(false);
+  const [secretsWarnFindings, setSecretsWarnFindings] = useState<SecretFinding[]>([]);
   const sendGenerationRef = useRef(0);
   const skipNextRemoteSaveRef = useRef(false);
   const remoteReadyRef = useRef(false);
@@ -596,6 +604,34 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
     }
   }, [url, queryParams, envVariables]);
 
+  function handleSendClick() {
+    const findings = scanRequestForSecrets({
+      url: substituteVariables(url.trim(), envVariables),
+      headers: headers
+        .filter((row) => row.enabled && row.key.trim())
+        .map((row) => ({
+          key: row.key,
+          value: substituteVariables(row.value, envVariables),
+        })),
+      queryParams: queryParams
+        .filter((row) => row.enabled && row.key.trim())
+        .map((row) => ({
+          key: row.key,
+          value: substituteVariables(row.value, envVariables),
+        })),
+      body: supportsBody && bodyMode === 'raw' ? substituteVariables(body, envVariables) : '',
+      envValues: Object.values(envVariables),
+    });
+
+    if (findings.length > 0) {
+      setSecretsWarnFindings(findings);
+      setSecretsWarnOpen(true);
+      return;
+    }
+
+    void handleSend();
+  }
+
   async function handleSend() {
     const sendId = ++sendGenerationRef.current;
     setSending(true);
@@ -700,6 +736,7 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
     }`;
 
   return (
+    <>
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-700 bg-surface px-3 py-2">
         <button
@@ -1004,7 +1041,7 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
               </button>
               <button
                 type="button"
-                onClick={() => void handleSend()}
+                onClick={handleSendClick}
                 disabled={sending}
                 className="rounded-md bg-brand px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-60"
               >
@@ -1221,5 +1258,20 @@ export function HttpRequestView({ onBack }: HttpRequestViewProps) {
         </div>
       </div>
     </div>
+
+    <ConfirmDialog
+      open={secretsWarnOpen}
+      title="Possible secrets or PII detected"
+      description={formatSecretFindingsMessage(secretsWarnFindings, 'send')}
+      confirmLabel="Send anyway"
+      cancelLabel="Cancel"
+      tone="danger"
+      onConfirm={() => {
+        setSecretsWarnOpen(false);
+        void handleSend();
+      }}
+      onCancel={() => setSecretsWarnOpen(false)}
+    />
+    </>
   );
 }

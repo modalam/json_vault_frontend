@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { blobApiHint, blobPageUrl } from '@/lib/constants';
+import { scanForSecrets, type SecretFinding } from '@/lib/secrets-scan';
 
 type ShareDialogProps = {
   blobId: string;
   open: boolean;
   onClose: () => void;
+  /** Optional blob JSON text — scanned for secrets/PII warning banner. */
+  content?: string;
 };
 
 type CopiedField = 'pageUrl' | 'api';
 
-export function ShareDialog({ blobId, open, onClose }: ShareDialogProps) {
+export function ShareDialog({ blobId, open, onClose, content }: ShareDialogProps) {
   const [copied, setCopied] = useState<CopiedField | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [findings, setFindings] = useState<SecretFinding[]>([]);
   const resetTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -24,8 +28,11 @@ export function ShareDialog({ blobId, open, onClose }: ShareDialogProps) {
     if (!open) {
       setCopied(null);
       setCopyError(null);
+      setFindings([]);
+      return;
     }
-  }, [open]);
+    setFindings(content ? scanForSecrets(content) : []);
+  }, [open, content]);
 
   if (!open) return null;
 
@@ -70,6 +77,24 @@ export function ShareDialog({ blobId, open, onClose }: ShareDialogProps) {
               ? 'API payload copied to clipboard.'
               : ''}
         </p>
+
+        {findings.length > 0 && (
+          <div className="mb-4 rounded-md border border-amber-800/60 bg-amber-950/40 px-3 py-2 text-sm text-amber-100">
+            <p className="font-medium text-amber-200">
+              Possible secrets or PII detected in this blob
+            </p>
+            <ul className="mt-1.5 list-inside list-disc space-y-0.5 text-xs text-amber-100/90">
+              {findings.slice(0, 6).map((f) => (
+                <li key={`${f.kind}:${f.label}:${f.sample}`}>
+                  {f.label} <span className="font-mono text-amber-200/80">({f.sample})</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-amber-200/80">
+              Anyone with the link may be able to read this data. Share only if that is intentional.
+            </p>
+          </div>
+        )}
 
         {copyError && (
           <p className="mb-3 rounded border border-red-800/60 bg-red-950/40 px-3 py-2 text-sm text-red-300">

@@ -55,7 +55,11 @@ export function ConfirmDialog({
           </button>
         </div>
 
-        {description && <p className="mb-5 text-sm leading-relaxed text-slate-400">{description}</p>}
+        {description && (
+          <p className="mb-5 whitespace-pre-wrap text-sm leading-relaxed text-slate-400">
+            {description}
+          </p>
+        )}
 
         <div className="flex justify-end gap-2">
           <button

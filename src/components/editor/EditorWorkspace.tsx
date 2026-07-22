@@ -18,6 +18,11 @@ import {
   sortJson,
 } from '@/lib/json-utils';
 import { shouldAutoSuggestName, suggestBlobName } from '@/lib/suggest-blob-name';
+import {
+  formatSecretFindingsMessage,
+  scanForSecrets,
+  type SecretFinding,
+} from '@/lib/secrets-scan';
 import { useAuthStore } from '@/stores/auth-store';
 import { useEditorStore } from '@/stores/editor-store';
 
@@ -33,6 +38,8 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
   const [exportValue, setExportValue] = useState<unknown>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [secretsWarnOpen, setSecretsWarnOpen] = useState(false);
+  const [secretsWarnFindings, setSecretsWarnFindings] = useState<SecretFinding[]>([]);
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
   const {
@@ -186,6 +193,16 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
     setExportOpen(true);
   }
 
+  function handleShareClick() {
+    const findings = scanForSecrets(text);
+    if (findings.length > 0) {
+      setSecretsWarnFindings(findings);
+      setSecretsWarnOpen(true);
+      return;
+    }
+    setShareOpen(true);
+  }
+
   function handleDelete() {
     if (!activeId || !editToken) return;
     setDeleteConfirmOpen(true);
@@ -298,7 +315,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
         onExportSchema={handleExportSchema}
         onUndo={handleUndo}
         onRedo={handleRedo}
-        onShare={() => setShareOpen(true)}
+        onShare={handleShareClick}
         onDelete={handleDelete}
         saving={saving}
         canSave={Boolean(user) && valid && canEdit && !loading}
@@ -378,7 +395,12 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
       />
 
       {activeId && (
-        <ShareDialog blobId={activeId} open={shareOpen} onClose={() => setShareOpen(false)} />
+        <ShareDialog
+          blobId={activeId}
+          open={shareOpen}
+          content={text}
+          onClose={() => setShareOpen(false)}
+        />
       )}
 
       <SchemaExportDialog
@@ -389,6 +411,20 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
           setExportOpen(false);
           setExportValue(null);
         }}
+      />
+
+      <ConfirmDialog
+        open={secretsWarnOpen}
+        title="Possible secrets or PII detected"
+        description={formatSecretFindingsMessage(secretsWarnFindings, 'share')}
+        confirmLabel="Share anyway"
+        cancelLabel="Cancel"
+        tone="danger"
+        onConfirm={() => {
+          setSecretsWarnOpen(false);
+          setShareOpen(true);
+        }}
+        onCancel={() => setSecretsWarnOpen(false)}
       />
 
       <ConfirmDialog
