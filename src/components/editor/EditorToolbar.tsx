@@ -8,6 +8,7 @@ type EditorToolbarProps = {
   onRepair: () => void;
   onValidate: () => void;
   onExportSchema: () => void;
+  onExplainJson: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onShare: () => void;
@@ -20,6 +21,7 @@ type EditorToolbarProps = {
   canShare: boolean;
   canDelete: boolean;
   canExportSchema: boolean;
+  canExplainJson: boolean;
 };
 
 export function EditorToolbar({
@@ -32,6 +34,7 @@ export function EditorToolbar({
   onRepair,
   onValidate,
   onExportSchema,
+  onExplainJson,
   onUndo,
   onRedo,
   onShare,
@@ -44,6 +47,7 @@ export function EditorToolbar({
   canShare,
   canDelete,
   canExportSchema,
+  canExplainJson,
 }: EditorToolbarProps) {
   const btn =
     'rounded-md px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40';
@@ -91,6 +95,16 @@ export function EditorToolbar({
         title="Export JSON Schema or TypeScript types"
       >
         Export schema
+      </button>
+      <button
+        type="button"
+        className={ghost}
+        onClick={onExplainJson}
+        disabled={!canExplainJson}
+        data-testid="explain-json-button"
+        title="Summarize this JSON (local outline + optional Workers AI)"
+      >
+        Explain
       </button>
       <button type="button" className={ghost} onClick={onUndo} disabled={!canUndo || !canEdit}>
         Undo

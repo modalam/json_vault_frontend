@@ -371,7 +371,7 @@ export function JsonCompareView({ initialLeft = '', onBack }: JsonCompareViewPro
   async function handleExplainWithAi() {
     if (!result) return;
     if (!user) {
-      setAiError('Sign in to use Workers AI explain (uses your free Cloudflare AI quota).');
+      setAiError('Sign in to use AI for Explain Diff feature');
       return;
     }
 
@@ -485,7 +485,7 @@ export function JsonCompareView({ initialLeft = '', onBack }: JsonCompareViewPro
                     onClick={() => void handleExplainWithAi()}
                     disabled={aiLoading}
                     className="rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-100 hover:bg-slate-700 disabled:opacity-60"
-                    title="Uses Cloudflare Workers AI free daily quota"
+                    title="Uses AI for Explain Diff feature"
                   >
                     {aiLoading ? 'Explaining…' : 'Explain with AI'}
                   </button>
@@ -499,7 +499,7 @@ export function JsonCompareView({ initialLeft = '', onBack }: JsonCompareViewPro
                     <Link to="/login" className="text-brand hover:underline">
                       Sign in
                     </Link>{' '}
-                    to generate a richer AI explanation (Cloudflare Workers AI free tier).
+                    to generate a richer AI explanation for the diff.
                   </p>
                 )}
 

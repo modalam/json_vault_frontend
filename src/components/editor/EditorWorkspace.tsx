@@ -6,6 +6,7 @@ import { EditorToolbar } from '@/components/editor/EditorToolbar';
 import { StatusBar } from '@/components/editor/StatusBar';
 import { ShareDialog } from '@/components/blob/ShareDialog';
 import { SchemaExportDialog } from '@/components/blob/SchemaExportDialog';
+import { ExplainJsonPanel } from '@/components/editor/ExplainJsonPanel';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ApiError, createBlob, deleteBlob, getBlob, listBlobs, updateBlob } from '@/lib/api-client';
 import { clearEditToken, getEditToken, setEditToken } from '@/lib/auth';
@@ -36,6 +37,8 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportValue, setExportValue] = useState<unknown>(null);
+  const [explainOpen, setExplainOpen] = useState(false);
+  const [explainValue, setExplainValue] = useState<unknown>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [secretsWarnOpen, setSecretsWarnOpen] = useState(false);
@@ -193,6 +196,16 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
     setExportOpen(true);
   }
 
+  function handleExplainJson() {
+    const parsed = isValidJson(text);
+    if (!parsed.ok) {
+      setStatusMessage('Fix JSON before explaining.');
+      return;
+    }
+    setExplainValue(parsed.value);
+    setExplainOpen(true);
+  }
+
   function handleShareClick() {
     const findings = scanForSecrets(text);
     if (findings.length > 0) {
@@ -313,6 +326,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
         onRepair={handleRepair}
         onValidate={handleValidate}
         onExportSchema={handleExportSchema}
+        onExplainJson={handleExplainJson}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onShare={handleShareClick}
@@ -325,6 +339,7 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
         canShare={Boolean(activeId)}
         canDelete={Boolean(activeId && editToken)}
         canExportSchema={valid && !loading}
+        canExplainJson={valid && !loading}
       />
 
       {/* Dual pane like jsonblob: JSON Editor | Tree View */}
@@ -410,6 +425,16 @@ export function EditorWorkspace({ blobId }: EditorWorkspaceProps) {
         onClose={() => {
           setExportOpen(false);
           setExportValue(null);
+        }}
+      />
+
+      <ExplainJsonPanel
+        open={explainOpen}
+        value={explainValue}
+        blobName={blobName}
+        onClose={() => {
+          setExplainOpen(false);
+          setExplainValue(null);
         }}
       />
 
