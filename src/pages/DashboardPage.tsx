@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/auth-store';
 import { useEditorStore } from '@/stores/editor-store';
 import * as api from '@/lib/api-client';
+import { OnboardingTour } from '@/components/onboarding/OnboardingTour';
 
 type Vault = {
   id: string;
@@ -60,11 +61,15 @@ export function DashboardPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
+      <OnboardingTour />
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-white">Dashboard</h1>
         <p className="mt-1 text-sm text-slate-400">
           Welcome back{user?.displayName ? `, ${user.displayName}` : ''}. Choose a tool from the
-          left sidebar, or open a blob below.
+          left sidebar, or open a blob below.{' '}
+          <Link to="/settings" className="text-brand hover:underline">
+            View plan usage
+          </Link>
         </p>
       </div>
 

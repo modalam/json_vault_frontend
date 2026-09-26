@@ -47,6 +47,15 @@ export function ToolsSidebar() {
           <NavIcon kind="request" />
           Request
         </NavLink>
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            `${linkBase} ${isActive || location.pathname.startsWith('/settings/') ? linkActive : linkIdle}`
+          }
+        >
+          <NavIcon kind="settings" />
+          Settings
+        </NavLink>
       </nav>
       <p className="hidden border-t border-slate-800 px-3 py-3 text-[11px] leading-relaxed text-slate-500 md:block">
         Switch tools anytime — your work stays in this browser and syncs when signed in.
@@ -55,7 +64,11 @@ export function ToolsSidebar() {
   );
 }
 
-function NavIcon({ kind }: { kind: 'dashboard' | 'editor' | 'compare' | 'request' }) {
+function NavIcon({
+  kind,
+}: {
+  kind: 'dashboard' | 'editor' | 'compare' | 'request' | 'settings';
+}) {
   const className = 'h-4 w-4 shrink-0 opacity-80';
   switch (kind) {
     case 'dashboard':
@@ -106,6 +119,22 @@ function NavIcon({ kind }: { kind: 'dashboard' | 'editor' | 'compare' | 'request
             strokeLinejoin="round"
           />
           <path d="M18 6v12" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+        </svg>
+      );
+    case 'settings':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden>
+          <path
+            d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+            stroke="currentColor"
+            strokeWidth="1.75"
+          />
+          <path
+            d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.1.7.7 1.2 1.5 1.3H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+          />
         </svg>
       );
   }

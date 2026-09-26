@@ -29,6 +29,12 @@ export function Header() {
       <nav className="flex items-center gap-3 text-sm text-slate-300">
         {user ? (
           <>
+            <Link className="hover:text-white" to="/settings">
+              Settings
+            </Link>
+            <Link className="hover:text-white" to="/docs">
+              API
+            </Link>
             <span className="hidden text-slate-500 sm:inline">{user.email}</span>
             <button
               type="button"
@@ -40,6 +46,9 @@ export function Header() {
           </>
         ) : (
           <>
+            <Link className="hover:text-white" to="/docs">
+              API
+            </Link>
             <Link className={onLoginPage ? authPrimary : authGhost} to="/login">
               Sign in
             </Link>
@@ -56,7 +65,23 @@ export function Header() {
 export function Footer() {
   return (
     <footer className="border-t border-slate-800 px-4 py-3 text-center text-xs text-slate-500">
-      JSON Vault — store, edit, and share JSON at the edge
+      <span>JSON Vault — store, edit, and share JSON at the edge</span>
+      <span className="mx-2 text-slate-700">·</span>
+      <Link to="/docs" className="hover:text-slate-300">
+        API
+      </Link>
+      <span className="mx-2 text-slate-700">·</span>
+      <Link to="/about" className="hover:text-slate-300">
+        About
+      </Link>
+      <span className="mx-2 text-slate-700">·</span>
+      <Link to="/privacy" className="hover:text-slate-300">
+        Privacy
+      </Link>
+      <span className="mx-2 text-slate-700">·</span>
+      <Link to="/terms" className="hover:text-slate-300">
+        Terms
+      </Link>
     </footer>
   );
 }

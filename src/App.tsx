@@ -9,6 +9,10 @@ import { RegisterPage } from '@/pages/RegisterPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { ComparePage } from '@/pages/ComparePage';
 import { RequestPage } from '@/pages/RequestPage';
+import { SettingsPage } from '@/pages/SettingsPage';
+import { SettingsApiKeysPage } from '@/pages/SettingsApiKeysPage';
+import { ApiDocsPage } from '@/pages/ApiDocsPage';
+import { AboutPage, PrivacyPage, TermsPage } from '@/pages/LegalPages';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
 export default function App() {
@@ -23,11 +27,31 @@ export default function App() {
             <Route path="/request" element={<RequestPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/docs" element={<ApiDocsPage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/terms" element={<TermsPage />} />
             <Route
               path="/dashboard"
               element={
                 <ProtectedRoute>
                   <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <SettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings/api-keys"
+              element={
+                <ProtectedRoute>
+                  <SettingsApiKeysPage />
                 </ProtectedRoute>
               }
             />

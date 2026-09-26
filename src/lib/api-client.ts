@@ -316,3 +316,66 @@ export async function deleteBlob(id: string, editToken: string): Promise<void> {
 
   if (!res.ok) throw await parseError(res);
 }
+
+export type ApiKeySummary = {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  scopes: string[];
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+};
+
+export type CreatedApiKey = ApiKeySummary & { key: string };
+
+export async function listApiKeys(): Promise<ApiKeySummary[]> {
+  const res = await fetchWithAuth(`${API_URL}/api/v1/api-keys`, { method: 'GET' });
+  if (!res.ok) throw await parseError(res);
+  const body = (await res.json()) as { data: ApiKeySummary[] };
+  return body.data;
+}
+
+export async function createApiKey(input: {
+  name: string;
+  scopes?: string[];
+  expiresAt?: string | null;
+}): Promise<CreatedApiKey> {
+  const res = await fetchWithAuth(`${API_URL}/api/v1/api-keys`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw await parseError(res);
+  const body = (await res.json()) as { data: CreatedApiKey };
+  return body.data;
+}
+
+export async function revokeApiKey(id: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_URL}/api/v1/api-keys/${id}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw await parseError(res);
+}
+
+export type UsageReport = {
+  plan: string;
+  blobs: { used: number; limit: number };
+  storage: { usedBytes: number; limitBytes: number };
+  rateLimit: { requestsPerMinute: number };
+};
+
+export async function getUsage(): Promise<UsageReport> {
+  const res = await fetchWithAuth(`${API_URL}/api/v1/usage`, { method: 'GET' });
+  if (!res.ok) throw await parseError(res);
+  const body = (await res.json()) as { data: UsageReport };
+  return body.data;
+}
+
+export async function fetchOpenApiSpec(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${API_URL}/api/v1/openapi.json`);
+  if (!res.ok) {
+    throw new ApiError('INTERNAL_ERROR', res.status, 'Failed to load OpenAPI spec.');
+  }
+  return (await res.json()) as Record<string, unknown>;
+}
